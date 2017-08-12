@@ -28,13 +28,11 @@ impl Map {
                 let mut lock = node_ctx.lock();
                 lock.wait(|x| x.available::<T>(InPortID(channel)) >= 1);
                 let mut data = lock.read::<T>(InPortID(channel)).unwrap();
-                drop(lock);
 
                 // process
                 let out: Vec<U> = data.drain(..).map(|x| f(x)).collect();
 
                 // write output
-                let mut lock = node_ctx.lock();
                 lock.write(OutPortID(channel), &out).unwrap();
             }
         });
@@ -67,13 +65,11 @@ impl NodeMap {
             let mut lock = node_ctx.lock();
             lock.wait(|x| (0..self.inputs).all(|id| x.available::<T>(InPortID(id)) >= 1));
             let data: Vec<T> = (0..self.inputs).map(|id| lock.read_n::<T>(InPortID(id), 1).unwrap()[0]).collect();
-            drop(lock);
 
             // process
             let mut out: Vec<U> = f(&data);
 
             // write output
-            let mut lock = node_ctx.lock();
             assert_eq!(out.len(), lock.node().out_ports().len());
             for (id, out) in out.drain(..).enumerate() {
                 lock.write(OutPortID(id), &[out]).unwrap();
@@ -82,6 +78,44 @@ impl NodeMap {
     }
 }
 
+/**
+ * A simple mapping from input to output ports. The given vector contains an element for each
+ * output port, indicating the input port id to route from.
+ */
+pub struct PortIdxMap {
+    pub id: NodeID,
+    pub inputs: usize,
+    pub outputs: usize,
+    pub map: Vec<usize>
+}
+
+impl PortIdxMap {
+    pub fn new(graph: &mut Graph, inputs: usize, outputs: usize, map: Vec<usize>) -> PortIdxMap {
+        assert_eq!(map.len(), outputs);
+        assert!(*map.iter().max().unwrap() < inputs);
+        PortIdxMap {
+            id: graph.add_node(inputs, outputs),
+            inputs,
+            outputs,
+            map
+        }
+    }
+    pub fn run(self, ctx: &Context) {
+        let node_ctx = ctx.node_ctx(self.id).unwrap();
+        thread::spawn(move || loop {
+            // get input
+            let mut lock = node_ctx.lock();
+            // TODO we can ignore inputs that are unused in the map
+            lock.wait(|x| (0..self.inputs).all(|id| x.available::<u8>(InPortID(id)) >= 1));
+            let data: Vec<_> = (0..self.inputs).map(|id| lock.read::<u8>(InPortID(id)).unwrap()).collect();
+
+            // write output
+            for (dst, &src) in self.map.iter().enumerate() {
+                lock.write(OutPortID(dst), &data[src]).unwrap();
+            }
+        });
+    }
+}
 
 // TODO LIST
 //

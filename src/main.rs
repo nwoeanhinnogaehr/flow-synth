@@ -17,20 +17,20 @@ fn main() {
     let mut graph = Graph::new();
 
     let audio = audio_io::AudioIONode::new(&mut graph, CHANNELS, CHANNELS);
-    let split = basics::NodeMap::new(&mut graph, CHANNELS, CHANNELS*2);
+    let split = basics::PortIdxMap::new(&mut graph, CHANNELS, CHANNELS*2, (0..CHANNELS).cycle().take(CHANNELS*2).collect());
     let process = basics::Map::new(&mut graph, CHANNELS);
     let spectrogram = rainbowgram::Rainbowgram::new(&mut graph, CHANNELS);
 
-    graph.connect_all(audio.id, split.id).unwrap();
-    graph.connect_n(split.id, OutPortID(0), process.id, InPortID(0), CHANNELS).unwrap();
+    graph.connect_all(audio.id, process.id).unwrap();
+    graph.connect_all(process.id, split.id).unwrap();
+    graph.connect_n(split.id, OutPortID(0), audio.id, InPortID(0), CHANNELS).unwrap();
     graph.connect_n(split.id, OutPortID(CHANNELS), spectrogram.id, InPortID(0), CHANNELS).unwrap();
-    graph.connect_all(process.id, audio.id).unwrap();
 
     let ctx = Context::new(graph);
 
     audio.run(&ctx);
     process.run(&ctx, |x: f32| x.abs());
-    split.run(&ctx, |x: &[f32]| x.iter().cloned().cycle().take(CHANNELS*2).collect());
+    split.run(&ctx);
     spectrogram.run(&ctx);
 
     thread::park();
