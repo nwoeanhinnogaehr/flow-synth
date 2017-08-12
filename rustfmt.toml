@@ -1,0 +1,7 @@
+# why do they want the lines to wrap so short by default?
+# makes most things look like a mess
+max_width = 110
+array_width = 110
+comment_width = 110
+fn_call_width = 110
+chain_one_line_max = 110
