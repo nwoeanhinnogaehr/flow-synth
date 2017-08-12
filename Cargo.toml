@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Noah Weninger <nweninge@ualberta.ca>"]
 
 [dependencies]
-modular-flow = { path = "../modular-flow" }
+modular-flow = { git = "https://github.com/nwoeanhinnogaehr/modular-flow.git" }
 jack = "*"
 sdl2 = "*"
 rustfft = "*"

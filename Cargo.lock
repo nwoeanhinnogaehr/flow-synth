@@ -3,7 +3,7 @@ name = "flow-synth"
 version = "0.1.0"
 dependencies = [
  "jack 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "modular-flow 0.0.1",
+ "modular-flow 0.0.1 (git+https://github.com/nwoeanhinnogaehr/modular-flow.git)",
  "rustfft 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sdl2 0.30.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -96,6 +96,7 @@ dependencies = [
 [[package]]
 name = "modular-flow"
 version = "0.0.1"
+source = "git+https://github.com/nwoeanhinnogaehr/modular-flow.git#a85bc32d55357a40bef36277492d9b99c9dfbc60"
 
 [[package]]
 name = "num"
@@ -204,6 +205,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum libloading 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "be99f814beb3e9503a786a592c909692bb6d4fc5a695f6ed7987223acfbd5194"
 "checksum magenta 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "4bf0336886480e671965f794bc9b6fce88503563013d1bfb7a502c81fe3ac527"
 "checksum magenta-sys 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "40d014c7011ac470ae28e2f76a02bfea4a8480f73e701353b49ad7a8d75f4699"
+"checksum modular-flow 0.0.1 (git+https://github.com/nwoeanhinnogaehr/modular-flow.git)" = "<none>"
 "checksum num 0.1.40 (registry+https://github.com/rust-lang/crates.io-index)" = "a311b77ebdc5dd4cf6449d81e4135d9f0e3b153839ac90e648a8ef538f923525"
 "checksum num-complex 0.1.40 (registry+https://github.com/rust-lang/crates.io-index)" = "503e668405c5492d67cf662a81e05be40efe2e6bcf10f7794a07bd9865e704e6"
 "checksum num-integer 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)" = "d1452e8b06e448a07f0e6ebb0bb1d92b8890eea63288c0b627331d53514d0fba"
