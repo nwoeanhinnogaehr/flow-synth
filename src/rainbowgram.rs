@@ -23,7 +23,7 @@ impl Rainbowgram {
     pub fn run(self, context: &Context) {
         let node_ctx = context.node_ctx(self.id).unwrap();
         const fft_size: usize = 2048;
-        const height: u32 = 1024;
+        const height: u32 = 512;
 
         thread::spawn(move || {
             let sdl_context = sdl2::init().unwrap();
@@ -57,11 +57,16 @@ impl Rainbowgram {
 
             'mainloop: loop {
                 let mut lock = node_ctx.lock();
-                lock.wait(|x| x.available::<f32>(InPortID(0)) >= fft_size);
-                let data = lock.read_n::<f32>(InPortID(0), fft_size).unwrap();
+                lock.wait(|x| (0..self.channels).all(|id| x.available::<f32>(InPortID(id)) >= fft_size));
+                let data: Vec<_> = (0..self.channels).map(|id| lock.read_n::<f32>(InPortID(id), fft_size).unwrap()).collect();
                 drop(lock);
+
                 for i in 0..fft_size {
-                    fft_input[i].re = data[i];
+                    fft_input[i].re = 0.0;
+                    fft_input[i].im = 0.0;
+                    for j in 0..self.channels {
+                        fft_input[i].re += data[j][i];
+                    }
                 }
                 fft.process(&mut fft_input, &mut fft_output);
 
