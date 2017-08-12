@@ -95,7 +95,7 @@ impl Rainbowgram {
                 }).unwrap();
 
                 canvas.clear();
-                canvas.copy(&texture, Some(Rect::new(0, scroll_pos, (fft_size/2) as u32, height/2)), None).unwrap();
+                canvas.copy(&texture, Some(Rect::new(0, scroll_pos+1, (fft_size/2) as u32, height/2)), None).unwrap();
                 canvas.present();
 
                 //::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
