@@ -6,3 +6,5 @@ authors = ["Noah Weninger <nweninge@ualberta.ca>"]
 [dependencies]
 modular-flow = { path = "../modular-flow" }
 jack = "*"
+sdl2 = "*"
+rustfft = "*"
