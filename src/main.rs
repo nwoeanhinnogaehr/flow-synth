@@ -36,9 +36,9 @@ fn main() {
         ctx.node_ctx(split).unwrap(),
         (0..CHANNELS).cycle().take(CHANNELS * 2).collect(),
     );
-    stft::run_stft::<f32>(ctx.node_ctx(fft).unwrap(), 1024, 1024);
+    stft::run_stft::<f32>(ctx.node_ctx(fft).unwrap(), 2048, 512);
     stft::run_stft_render(ctx.node_ctx(spectrogram).unwrap());
-    pixel_scroller::run_pixel_scroller(ctx.node_ctx(plotter).unwrap(), 512, 1024);
+    pixel_scroller::run_pixel_scroller(ctx.node_ctx(plotter).unwrap(), 1024, 1024);
 
     thread::park();
 }

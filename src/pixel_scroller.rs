@@ -52,29 +52,28 @@ pub fn run_pixel_scroller(ctx: NodeContext, width: usize, height: usize) {
                 }
             }
 
-            let scroll_pos = time % (height as i32 / 2);
-            time += 1;
+            let mut scroll_pos;
+            loop {
+                scroll_pos = time % (height as i32 / 2);
 
-            let lock = ctx.lock();
-            let frame = DataFrame::<u8>::read(&lock, InPortID(0));
-            assert_eq!(frame.len(), width);
-            drop(lock);
+                let lock = ctx.lock();
+                let frame = match DataFrame::<u8>::try_read(&lock, InPortID(0)) {
+                    Some(x) => x,
+                    None => break,
+                };
+                assert_eq!(frame.len(), width * 3);
+                drop(lock);
 
-            let fill_fn = |buffer: &mut [u8], _: usize| for x in 0..width {
-                let value = frame[x];
-                let offset = x * 3;
-                buffer[offset] = value;
-                buffer[offset + 1] = value;
-                buffer[offset + 2] = value;
-            };
-            texture.with_lock(Rect::new(0, scroll_pos, width as u32, 1), &fill_fn).unwrap();
-            texture
-                .with_lock(Rect::new(0, scroll_pos + height as i32 / 2, width as u32, 1), &fill_fn)
-                .unwrap();
+                texture.update(Rect::new(0, scroll_pos, width as u32, 1), &frame, width*3).unwrap();
+                texture
+                    .update(Rect::new(0, scroll_pos + height as i32 / 2, width as u32, 1), &frame, width*3)
+                    .unwrap();
+                time += 1;
+            }
 
             canvas.clear();
             canvas
-                .copy(&texture, Some(Rect::new(0, scroll_pos + 1, width as u32, height as u32 / 2)), None)
+                .copy(&texture, Some(Rect::new(0, scroll_pos, width as u32, height as u32 / 2)), None)
                 .unwrap();
             canvas.present();
 
