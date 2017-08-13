@@ -47,11 +47,14 @@ pub fn run_stft_render(ctx: NodeContext) {
             lock.node().in_ports().iter().map(|port| DataFrame::<Complex<f32>>::read(&lock, port.id()));
         let ch1 = frame.next().unwrap();
         let frame = frame.skip(1).fold(ch1, |a, x| a.iter().zip(x.iter()).map(|(l, r)| l + r).collect());
-        let out: Vec<_> = frame.iter().flat_map(|x| {
-            let value = x.norm() * 32.0;
-            let pixel = value as u8;
-            iter::repeat(pixel).take(3)
-        }).collect();
+        let out: Vec<_> = frame
+            .iter()
+            .flat_map(|x| {
+                let value = x.norm() * 32.0;
+                let pixel = value as u8;
+                iter::repeat(pixel).take(3)
+            })
+            .collect();
         DataFrame::write(&lock, OutPortID(0), &out);
     });
 }

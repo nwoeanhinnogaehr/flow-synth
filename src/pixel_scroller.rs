@@ -64,9 +64,9 @@ pub fn run_pixel_scroller(ctx: NodeContext, width: usize, height: usize) {
                 assert_eq!(frame.len(), width * 3);
                 drop(lock);
 
-                texture.update(Rect::new(0, scroll_pos, width as u32, 1), &frame, width*3).unwrap();
+                texture.update(Rect::new(0, scroll_pos, width as u32, 1), &frame, width * 3).unwrap();
                 texture
-                    .update(Rect::new(0, scroll_pos + height as i32 / 2, width as u32, 1), &frame, width*3)
+                    .update(Rect::new(0, scroll_pos + height as i32 / 2, width as u32, 1), &frame, width * 3)
                     .unwrap();
                 time += 1;
             }
