@@ -3,6 +3,7 @@ extern crate jack;
 extern crate sdl2;
 extern crate rustfft;
 extern crate palette;
+extern crate apodize;
 
 mod audio_io;
 mod basics;
@@ -37,7 +38,7 @@ fn main() {
         ctx.node_ctx(split).unwrap(),
         (0..CHANNELS).cycle().take(CHANNELS * 2).collect(),
     );
-    stft::run_stft::<f32>(ctx.node_ctx(fft).unwrap(), 2048, 128);
+    stft::run_stft(ctx.node_ctx(fft).unwrap(), 2048, 128);
     stft::run_stft_render(ctx.node_ctx(spectrogram).unwrap());
     pixel_scroller::run_pixel_scroller(ctx.node_ctx(plotter).unwrap(), 1024, 2048);
 

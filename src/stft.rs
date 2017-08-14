@@ -1,18 +1,25 @@
 use modular_flow::graph::*;
 use modular_flow::context::*;
 use std::thread;
-use rustfft::{FFTnum, FFTplanner};
+use rustfft::FFTplanner;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use std::collections::VecDeque;
+use apodize;
 
-pub fn run_stft<T: FFTnum + ByteConvertible>(ctx: NodeContext, size: usize, hop: usize)
-where
-    Complex<T>: ByteConvertible,
-{
+type T = f32; // fix this because generic numbers are so annoying
+
+pub fn run_stft(ctx: NodeContext, size: usize, hop: usize) {
+    let window: Vec<T> = apodize::hanning_iter(size).map(|x| x.sqrt() as T).collect();
     thread::spawn(move || {
-        let mut queue = VecDeque::<T>::new();
-        queue.extend(vec![<T as Zero>::zero(); size - hop]);
+        let mut queues = vec![
+            {
+                let mut q = VecDeque::<T>::new();
+                q.extend(vec![<T as Zero>::zero(); size - hop]);
+                q
+            };
+            ctx.node().in_ports().len()
+        ];
         let mut input = vec![Complex::zero(); size];
         let mut output = vec![Complex::zero(); size];
 
@@ -20,17 +27,19 @@ where
         let fft = planner.plan_fft(size);
 
         loop {
-            for (in_port, out_port) in ctx.node().in_ports().iter().zip(ctx.node().out_ports()) {
+            for ((in_port, out_port), queue) in
+                ctx.node().in_ports().iter().zip(ctx.node().out_ports()).zip(queues.iter_mut())
+            {
                 let lock = ctx.lock();
                 lock.wait(|lock| lock.available::<T>(in_port.id()) >= hop);
                 queue.extend(lock.read_n::<T>(in_port.id(), hop).unwrap());
                 drop(lock);
 
-                for (dst, src) in input.iter_mut().zip(queue.iter().cloned()) {
-                    dst.re = src;
-                    dst.im = Zero::zero();
+                for ((dst, src), mul) in input.iter_mut().zip(queue.iter()).zip(&window) {
+                    dst.re = *src * mul;
+                    dst.im = 0.0;
                 }
-                queue.drain(0..hop);
+                queue.drain(..hop);
                 fft.process(&mut input, &mut output);
 
                 DataFrame::write(&ctx.lock(), out_port.id(), &output[..output.len() / 2]);
