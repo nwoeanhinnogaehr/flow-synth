@@ -8,3 +8,4 @@ modular-flow = { git = "https://github.com/nwoeanhinnogaehr/modular-flow.git" }
 jack = "*"
 sdl2 = "*"
 rustfft = "*"
+palette = "*"

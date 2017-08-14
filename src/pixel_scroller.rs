@@ -7,6 +7,7 @@ use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Keycode;
 use std::thread;
 use std::process;
+use std::mem;
 
 pub fn run_pixel_scroller(ctx: NodeContext, width: usize, height: usize) {
     assert_eq!(ctx.node().in_ports().len(), 1); // we support only 1 input
@@ -27,7 +28,7 @@ pub fn run_pixel_scroller(ctx: NodeContext, width: usize, height: usize) {
         let texture_creator = canvas.texture_creator();
 
         let mut texture = texture_creator
-            .create_texture_streaming(PixelFormatEnum::RGB24, width as u32, height as u32 * 2)
+            .create_texture_streaming(PixelFormatEnum::RGBA8888, width as u32, height as u32 * 2)
             .unwrap();
 
         let mut event_pump = sdl_context.event_pump().unwrap();
@@ -57,16 +58,26 @@ pub fn run_pixel_scroller(ctx: NodeContext, width: usize, height: usize) {
                 scroll_pos = time % (height as i32 / 2);
 
                 let lock = ctx.lock();
-                let frame = match DataFrame::<u8>::try_read(&lock, InPortID(0)) {
+                let frame = match DataFrame::<u32>::try_read(&lock, InPortID(0)) {
                     Some(x) => x,
                     None => break,
                 };
-                assert_eq!(frame.len(), width * 3);
+                assert_eq!(frame.len(), width);
                 drop(lock);
 
-                texture.update(Rect::new(0, scroll_pos, width as u32, 1), &frame, width * 3).unwrap();
                 texture
-                    .update(Rect::new(0, scroll_pos + height as i32 / 2, width as u32, 1), &frame, width * 3)
+                    .update(
+                        Rect::new(0, scroll_pos, width as u32, 1),
+                        unsafe { mem::transmute(&frame[..]) },
+                        width * 4,
+                    )
+                    .unwrap();
+                texture
+                    .update(
+                        Rect::new(0, scroll_pos + height as i32 / 2, width as u32, 1),
+                        unsafe { mem::transmute(&frame[..]) },
+                        width * 4,
+                    )
                     .unwrap();
                 time += 1;
             }
@@ -77,7 +88,7 @@ pub fn run_pixel_scroller(ctx: NodeContext, width: usize, height: usize) {
                 .unwrap();
             canvas.present();
 
-            //::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+            //thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
         }
 
         process::exit(0);
