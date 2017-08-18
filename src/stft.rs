@@ -11,7 +11,7 @@ use std::iter;
 type T = f32; // fix this because generic numbers are so annoying
 
 pub fn run_stft(ctx: NodeContext, size: usize, hop: usize) -> usize {
-    let window: Vec<T> = apodize::hanning_iter(size).map(|x| x as f32).collect();
+    let window: Vec<T> = apodize::hanning_iter(size).map(|x| x.sqrt() as f32).collect();
     thread::spawn(move || {
         let mut queues = vec![
             {
@@ -51,7 +51,7 @@ pub fn run_stft(ctx: NodeContext, size: usize, hop: usize) -> usize {
 }
 
 pub fn run_istft(ctx: NodeContext, size: usize, hop: usize) {
-    let window: Vec<f32> = apodize::hanning_iter(size).map(|x| x as f32).collect();
+    let window: Vec<f32> = apodize::hanning_iter(size).map(|x| x.sqrt() as f32).collect();
     thread::spawn(move || {
         let mut queues = vec![
             {
@@ -79,7 +79,7 @@ pub fn run_istft(ctx: NodeContext, size: usize, hop: usize) {
                     frame.iter().cloned().chain(iter::repeat(Complex::zero())).take(size).collect();
                 fft.process(&mut input, &mut output);
                 for ((src, dst), window) in output.iter().zip(queue.iter_mut()).zip(&window) {
-                    *dst += src.re * *window / size as f32 / 4.0;
+                    *dst += src.re * *window / size as f32 / (size / hop) as f32 * 4.0;
                 }
                 let samples = queue.drain(..hop).collect::<Vec<_>>();
                 ctx.lock().write(out_port.id(), &samples).unwrap();
@@ -102,7 +102,7 @@ pub fn run_stft_render(ctx: NodeContext, size: usize) {
             lock.read_n::<Complex<f32>>(port.id(), size).unwrap()
         });
         let ch1 = frame.next().unwrap();
-        let frame = frame.skip(1).fold(ch1, |a, x| a.iter().zip(x.iter()).map(|(l, r)| l + r).collect());
+        let frame = frame.fold(ch1, |a, x| a.iter().zip(x.iter()).map(|(l, r)| l + r).collect());
         let out: Vec<_> = frame
             .iter()
             .zip(prev_frame)
