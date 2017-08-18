@@ -53,42 +53,39 @@ pub fn run_pixel_scroller(ctx: NodeContext, width: usize, height: usize) {
                 }
             }
 
-            let mut scroll_pos;
-            loop {
-                scroll_pos = time % (height as i32 / 2);
+            let mut scroll_pos = 0;
 
-                let lock = ctx.lock();
-                let frame = match DataFrame::<u32>::try_read(&lock, InPortID(0)) {
-                    Some(x) => x,
-                    None => break,
-                };
-                assert_eq!(frame.len(), width);
+            let lock = ctx.lock();
+            lock.wait(|lock| lock.available::<u32>(InPortID(0)) >= width);
+            let available_pixels = lock.available::<u32>(InPortID(0));
+            if available_pixels >= width {
+                let frames = lock.read_n::<u32>(InPortID(0), available_pixels / width * width).unwrap();
                 drop(lock);
 
-                texture
-                    .update(
-                        Rect::new(0, scroll_pos, width as u32, 1),
-                        unsafe { mem::transmute(&frame[..]) },
-                        width * 4,
-                    )
+                for frame in frames.chunks(width) {
+                    scroll_pos = time % (height as i32 / 2);
+                    texture
+                        .update(
+                            Rect::new(0, scroll_pos, width as u32, 1),
+                            unsafe { mem::transmute(&frame[..]) },
+                            width * 4,
+                        )
+                        .unwrap();
+                    texture
+                        .update(
+                            Rect::new(0, scroll_pos + height as i32 / 2, width as u32, 1),
+                            unsafe { mem::transmute(&frame[..]) },
+                            width * 4,
+                        )
+                        .unwrap();
+                    time += 1;
+                }
+                canvas.clear();
+                canvas
+                    .copy(&texture, Some(Rect::new(0, scroll_pos, width as u32, height as u32 / 2)), None)
                     .unwrap();
-                texture
-                    .update(
-                        Rect::new(0, scroll_pos + height as i32 / 2, width as u32, 1),
-                        unsafe { mem::transmute(&frame[..]) },
-                        width * 4,
-                    )
-                    .unwrap();
-                time += 1;
+                canvas.present();
             }
-
-            canvas.clear();
-            canvas
-                .copy(&texture, Some(Rect::new(0, scroll_pos, width as u32, height as u32 / 2)), None)
-                .unwrap();
-            canvas.present();
-
-            //thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
         }
 
         process::exit(0);
