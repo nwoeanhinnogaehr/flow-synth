@@ -1,4 +1,4 @@
-use modular_flow::graph::*;
+use modular_flow::graph::Port;
 use modular_flow::context::*;
 use jack::prelude::*;
 use std::thread;
@@ -20,28 +20,33 @@ pub fn run_audio_io(ctx: NodeContext) {
         let unowned_inputs: Vec<_> = inputs.iter().map(|x| x.clone_unowned()).collect();
         let unowned_outputs: Vec<_> = outputs.iter().map(|x| x.clone_unowned()).collect();
 
-        let processor = ClosureProcessHandler::new(move |_: &Client, ps: &ProcessScope| -> JackControl {
-            // get port buffers
-            let input_ports: Vec<_> = inputs.iter().map(|input| AudioInPort::new(input, ps)).collect();
-            let mut output_ports: Vec<_> =
-                outputs.iter_mut().map(|output| AudioOutPort::new(output, ps)).collect();
+        let processor =
+            ClosureProcessHandler::new(move |client: &Client, ps: &ProcessScope| -> JackControl {
+                // get port buffers
+                let input_ports: Vec<_> = inputs.iter().map(|input| AudioInPort::new(input, ps)).collect();
+                let mut output_ports: Vec<_> =
+                    outputs.iter_mut().map(|output| AudioOutPort::new(output, ps)).collect();
 
-            // shuffle data
-            let lock = ctx.lock();
-            for (idx, input) in input_ports.iter().enumerate() {
-                lock.write(OutPortID(idx), input).unwrap();
-            }
-            for (idx, output) in output_ports.iter_mut().enumerate() {
-                // to avoid xruns, don't block, just skip instead.
-                if lock.available::<f32>(InPortID(idx)) >= output.len() {
-                    let read = lock.read_n(InPortID(idx), output.len()).unwrap();
-                    output.copy_from_slice(&read);
+                // shuffle data
+                let lock = ctx.lock();
+                for (input, out_port) in input_ports.iter().zip(lock.node().out_ports()) {
+                    lock.write(out_port.id(), input).unwrap();
                 }
-            }
+                // to avoid xruns, don't block, just skip instead.
+                if lock.node()
+                    .in_ports()
+                    .iter()
+                    .all(|in_port| lock.available::<f32>(in_port.id()) >= client.buffer_size() as usize)
+                {
+                    for (output, in_port) in output_ports.iter_mut().zip(lock.node().in_ports()) {
+                        let read = lock.read_n(in_port.id(), client.buffer_size() as usize).unwrap();
+                        output.copy_from_slice(&read);
+                    }
+                }
 
-            // do it forever
-            JackControl::Continue
-        });
+                // do it forever
+                JackControl::Continue
+            });
 
         // activate the client
         let active_client = AsyncClient::new(client, (), processor).unwrap();
