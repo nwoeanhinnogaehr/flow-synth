@@ -80,7 +80,6 @@ pub fn run_pixel_scroller(ctx: NodeContext, width: usize, height: usize) {
                         .unwrap();
                     time += 1;
                 }
-                canvas.clear();
                 canvas
                     .copy(&texture, Some(Rect::new(0, scroll_pos, width as u32, height as u32 / 2)), None)
                     .unwrap();

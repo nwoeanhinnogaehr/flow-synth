@@ -116,10 +116,10 @@ pub fn run_stft_render(ctx: NodeContext, size: usize) {
                 let value = norm / max;
 
                 // output colour
-                let (r, g, b, a): (f32, f32, f32, f32) =
+                let (r, g, b, _): (f32, f32, f32, f32) =
                     Srgb::linear_to_pixel(Hsv::new(RgbHue::from_radians(hue), 1.0, value));
-                let (r, g, b, a) = (r * 255.0, g * 255.0, b * 255.0, a * 255.0);
-                (r as u32) << 24 | (g as u32) << 16 | (b as u32) << 8 | (a as u32)
+                let (r, g, b) = (r * 255.0, g * 255.0, b * 255.0);
+                (r as u32) << 24 | (g as u32) << 16 | (b as u32) << 8 | 0xFF
             })
             .collect();
         prev_frame = frame;
