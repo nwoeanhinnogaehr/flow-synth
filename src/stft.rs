@@ -79,7 +79,7 @@ pub fn run_istft(ctx: NodeContext, size: usize, hop: usize) {
                     frame.iter().cloned().chain(iter::repeat(Complex::zero())).take(size).collect();
                 fft.process(&mut input, &mut output);
                 for ((src, dst), window) in output.iter().zip(queue.iter_mut()).zip(&window) {
-                    *dst += src.re * *window / size as f32 / (size / hop) as f32 * 4.0;
+                    *dst += src.re * *window / size as f32 / (size / hop) as f32 * 2.0;
                 }
                 let samples = queue.drain(..hop).collect::<Vec<_>>();
                 ctx.lock().write(out_port.id(), &samples).unwrap();
@@ -103,21 +103,29 @@ pub fn run_stft_render(ctx: NodeContext, size: usize) {
         });
         let ch1 = frame.next().unwrap();
         let frame = frame.fold(ch1, |a, x| a.iter().zip(x.iter()).map(|(l, r)| l + r).collect());
-        let out: Vec<_> = frame
-            .iter()
-            .zip(prev_frame)
-            .map(|(x, prev)| {
+        let out: Vec<_> = (0..size)
+            .map(|idx| {
+                let x = (idx as f32 / size as f32 * (size as f32).log2()).exp2();
+                let x_i = x as usize;
+
                 // compute hue
-                let hue = x.arg() - prev.arg();
+                let hue1 = frame[x_i].arg() - prev_frame[x_i].arg();
+                let hue2 = frame[(x_i + 1) % size].arg() - prev_frame[(x_i + 1) % size].arg();
 
                 // compute intensity
-                let norm = x.norm();
-                max = f32::max(norm, max);
-                let value = norm / max;
+                let norm1 = frame[x_i].norm();
+                let norm2 = frame[(x_i + 1) % size].norm();
+                max = f32::max(norm1, max);
+                max = f32::max(norm2, max);
+                let value1 = norm1 / max;
+                let value2 = norm2 / max;
 
                 // output colour
-                let (r, g, b, _): (f32, f32, f32, f32) =
-                    Srgb::linear_to_pixel(Hsv::new(RgbHue::from_radians(hue), 1.0, value));
+                let grad = Gradient::new(vec![
+                    Hsv::new(RgbHue::from_radians(hue1), 1.0, value1),
+                    Hsv::new(RgbHue::from_radians(hue2), 1.0, value2),
+                ]);
+                let (r, g, b, _): (f32, f32, f32, f32) = Srgb::linear_to_pixel(grad.get(x % 1.0));
                 let (r, g, b) = (r * 255.0, g * 255.0, b * 255.0);
                 (r as u32) << 24 | (g as u32) << 16 | (b as u32) << 8 | 0xFF
             })
