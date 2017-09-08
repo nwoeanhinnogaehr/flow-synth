@@ -4,9 +4,18 @@ version = "0.1.0"
 authors = ["Noah Weninger <nweninge@ualberta.ca>"]
 
 [dependencies]
-modular-flow = { git = "https://github.com/nwoeanhinnogaehr/modular-flow.git" }
+modular-flow = { path = "../modular-flow" }
 jack = "*"
 sdl2 = "*"
 rustfft = "*"
 palette = "*"
 apodize = "*"
+vec_map = "*"
+rocket = "*"
+rocket_codegen = "*"
+rocket_contrib = "*"
+rocket_cors = "*"
+
+[dependencies.conrod]
+version = "*"
+features = ["glium", "winit"]
