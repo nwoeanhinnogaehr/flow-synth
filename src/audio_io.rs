@@ -1,10 +1,9 @@
 use modular_flow::graph::{Node, Port};
 use modular_flow::context::*;
 use jack::prelude::*;
-use std::thread::{self, Thread};
-use super::gui::{ControlState, GuiNode, NodeDescriptor, RemoteControl};
+use std::thread;
+use super::control::{ControlState, NodeInstance, NodeDescriptor, RemoteControl};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct AudioIO {
     ctx: Arc<Context>,
@@ -14,7 +13,7 @@ pub struct AudioIO {
 
 impl NodeDescriptor for AudioIO {
     const NAME: &'static str = "audio I/O";
-    fn new(ctx: Arc<Context>) -> Box<GuiNode> {
+    fn new(ctx: Arc<Context>) -> Box<NodeInstance> {
         let id = ctx.graph().add_node(2, 2);
         let node_ctx = ctx.node_ctx(id).unwrap();
         let node = ctx.graph().node(id);
@@ -26,7 +25,7 @@ impl NodeDescriptor for AudioIO {
     }
 }
 
-impl GuiNode for AudioIO {
+impl NodeInstance for AudioIO {
     fn title(&self) -> String {
         format!("{}/{}", self.node.in_ports().len(), self.node.out_ports().len())
     }

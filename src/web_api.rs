@@ -7,15 +7,15 @@ use std::sync::Arc;
 use rocket_contrib::{Json, Value};
 use rocket::State;
 use audio_io;
-use gui::{GuiNode, NodeDescriptor, RemoteControl};
 use std::sync::RwLock;
 use rocket_cors;
 use rocket::http::Method;
 use rocket_cors::{AllowedHeaders, AllowedOrigins};
+use super::control::*;
 
 struct StaticNode {
     name: &'static str,
-    make: fn(Arc<Context>) -> Box<GuiNode>,
+    make: fn(Arc<Context>) -> Box<NodeInstance>,
 }
 
 const TYPES: &'static [StaticNode] = &[
@@ -26,7 +26,7 @@ const TYPES: &'static [StaticNode] = &[
 ];
 
 struct ActiveNode {
-    node: Box<GuiNode>,
+    node: Box<NodeInstance>,
     ctl: Arc<RemoteControl>,
     static_node: &'static StaticNode,
 }
