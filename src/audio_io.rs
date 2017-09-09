@@ -2,7 +2,7 @@ use modular_flow::graph::{Node, Port};
 use modular_flow::context::*;
 use jack::prelude::*;
 use std::thread;
-use super::control::{ControlState, NodeInstance, NodeDescriptor, RemoteControl};
+use super::control::{ControlState, NodeDescriptor, NodeInstance, RemoteControl};
 use std::sync::Arc;
 
 pub struct AudioIO {

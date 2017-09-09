@@ -142,60 +142,55 @@ fn node_info(
     dst_node_id: usize,
     dst_port_id: usize,
 ) -> Json<Value> {
-    match this.ctx
-        .graph()
-        .connect(NodeID(src_node_id), OutPortID(src_port_id), NodeID(dst_node_id), InPortID(dst_port_id)) {
-            Err(_) => json_err("cannot connect"),
-            Ok(_) => json_ok(json!({}))
-        }
+    match this.ctx.graph().connect(
+        NodeID(src_node_id),
+        OutPortID(src_port_id),
+        NodeID(dst_node_id),
+        InPortID(dst_port_id),
+    ) {
+        Err(_) => json_err("cannot connect"),
+        Ok(_) => json_ok(json!({})),
+    }
 }
 
 #[get("/node/<node_id>/set_status/<status>")]
-fn set_node_status(
-    this: State<WebApi>,
-    node_id: usize,
-    status: String
-) -> Json<Value> {
+fn set_node_status(this: State<WebApi>, node_id: usize, status: String) -> Json<Value> {
     let mut nodes = this.nodes.write().unwrap();
     if node_id >= nodes.len() {
         return json_err("node id out of bounds");
     }
     let node = &mut nodes[node_id];
     match status.as_ref() {
-        "run" => {
-            match node.ctl {
-                Some(ref ctl) => {
-                    let status = ctl.poll();
-                    match status {
-                        ControlState::Paused => {
-                            ctl.resume();
-                            json_ok(json!({}))
-                        }
-                        _ => json_err("cannot run from this state")
+        "run" => match node.ctl {
+            Some(ref ctl) => {
+                let status = ctl.poll();
+                match status {
+                    ControlState::Paused => {
+                        ctl.resume();
+                        json_ok(json!({}))
                     }
-                }
-                None => {
-                    node.ctl = Some(node.node.run());
-                    json_ok(json!({}))
+                    _ => json_err("cannot run from this state"),
                 }
             }
-        },
-        "pause" => {
-            match node.ctl {
-                Some(ref ctl) => {
-                    let status = ctl.poll();
-                    match status {
-                        ControlState::Running => {
-                            ctl.pause();
-                            json_ok(json!({}))
-                        }
-                        _ => json_err("cannot pause from this state")
-                    }
-                }
-                None => json_err("node not started"),
+            None => {
+                node.ctl = Some(node.node.run());
+                json_ok(json!({}))
             }
         },
-        _ => json_err("invalid status")
+        "pause" => match node.ctl {
+            Some(ref ctl) => {
+                let status = ctl.poll();
+                match status {
+                    ControlState::Running => {
+                        ctl.pause();
+                        json_ok(json!({}))
+                    }
+                    _ => json_err("cannot pause from this state"),
+                }
+            }
+            None => json_err("node not started"),
+        },
+        _ => json_err("invalid status"),
     }
 }
 
