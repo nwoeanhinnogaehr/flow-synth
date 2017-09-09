@@ -182,7 +182,7 @@ decodeTypes =
         )
 
 
-decodeAddNode : Decode.Decoder (Result String Int)
+decodeAddNode : Decode.Decoder AddNodeResult
 decodeAddNode =
     Decode.andThen
         (\status ->
@@ -306,6 +306,7 @@ update msg model =
             ( model, addNode nodeType )
 
         AddedNode (Ok nodeId) ->
+            -- TODO show error here if needed (nodeId :: Result)
             ( model, refreshNodes )
 
         AddedNode (Err err) ->

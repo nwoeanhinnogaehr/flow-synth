@@ -120,17 +120,16 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
 #[get("/type/<type_id>/new")]
 fn node_create(this: State<WebApi>, type_id: usize) -> Json<Value> {
     if type_id >= TYPES.len() {
-        return Json(json!({"status": "id out of bounds"}));
+        return json_err("id out of bounds");
     }
-    let mut node = (TYPES[type_id].make)(this.ctx.clone());
+    let node = (TYPES[type_id].make)(this.ctx.clone());
     let id = node.node().id().0;
     this.nodes.write().unwrap().push(ActiveNode {
         node,
         ctl: None,
         static_node: &TYPES[type_id],
     });
-    Json(json!({
-        "status": "ok",
+    json_ok(json!({
         "id": id,
     }))
 }
@@ -143,19 +142,82 @@ fn node_info(
     dst_node_id: usize,
     dst_port_id: usize,
 ) -> Json<Value> {
-    this.ctx
+    match this.ctx
         .graph()
-        .connect(NodeID(src_node_id), OutPortID(src_port_id), NodeID(dst_node_id), InPortID(dst_port_id))
-        .unwrap();
-    Json(json!({
-    }))
+        .connect(NodeID(src_node_id), OutPortID(src_port_id), NodeID(dst_node_id), InPortID(dst_port_id)) {
+            Err(_) => json_err("cannot connect"),
+            Ok(_) => json_ok(json!({}))
+        }
+}
+
+#[get("/node/<node_id>/set_status/<status>")]
+fn set_node_status(
+    this: State<WebApi>,
+    node_id: usize,
+    status: String
+) -> Json<Value> {
+    let mut nodes = this.nodes.write().unwrap();
+    if node_id >= nodes.len() {
+        return json_err("node id out of bounds");
+    }
+    let node = &mut nodes[node_id];
+    match status.as_ref() {
+        "run" => {
+            match node.ctl {
+                Some(ref ctl) => {
+                    let status = ctl.poll();
+                    match status {
+                        ControlState::Paused => {
+                            ctl.resume();
+                            json_ok(json!({}))
+                        }
+                        _ => json_err("cannot run from this state")
+                    }
+                }
+                None => {
+                    node.ctl = Some(node.node.run());
+                    json_ok(json!({}))
+                }
+            }
+        },
+        "pause" => {
+            match node.ctl {
+                Some(ref ctl) => {
+                    let status = ctl.poll();
+                    match status {
+                        ControlState::Running => {
+                            ctl.pause();
+                            json_ok(json!({}))
+                        }
+                        _ => json_err("cannot pause from this state")
+                    }
+                }
+                None => json_err("node not started"),
+            }
+        },
+        _ => json_err("invalid status")
+    }
 }
 
 pub fn run_server(ctx: Arc<Context>) {
     let options = rocket_cors::Cors::default();
     rocket::ignite()
-        .mount("/", routes![type_list, node_list, node_create, node_info])
+        .mount("/", routes![type_list, node_list, node_create, node_info, set_node_status])
         .manage(WebApi::new(ctx))
         .attach(options)
         .launch();
+}
+
+fn json_err<S: AsRef<str>>(msg: S) -> Json<Value> {
+    assert!(msg.as_ref() != "ok");
+    Json(json!({
+        "status": msg.as_ref()
+    }))
+}
+
+fn json_ok(mut msg: Value) -> Json<Value> {
+    if let Value::Object(ref mut map) = msg {
+        map.insert("status".into(), "ok".into());
+    }
+    Json(msg)
 }
