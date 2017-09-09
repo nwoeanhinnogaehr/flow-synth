@@ -27,7 +27,7 @@ const TYPES: &'static [StaticNode] = &[
 
 struct ActiveNode {
     node: Box<NodeInstance>,
-    ctl: Arc<RemoteControl>,
+    ctl: Option<Arc<RemoteControl>>,
     static_node: &'static StaticNode,
 }
 
@@ -110,7 +110,7 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
                     "in": in_ports,
                     "out": out_ports,
                 },
-                "status": "running", // TODO
+                "status": "stopped", // TODO
             })
         })
         .collect();
@@ -124,10 +124,9 @@ fn node_create(this: State<WebApi>, type_id: usize) -> Json<Value> {
     }
     let mut node = (TYPES[type_id].make)(this.ctx.clone());
     let id = node.node().id().0;
-    let ctl = node.run();
     this.nodes.write().unwrap().push(ActiveNode {
         node,
-        ctl,
+        ctl: None,
         static_node: &TYPES[type_id],
     });
     Json(json!({

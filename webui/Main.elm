@@ -1,99 +1,20 @@
 module Main exposing (..)
 
-import Html exposing (Html, button, div, text, ul, li)
+import Html exposing (Html, button, div, text, ol, li, b, i, br, code)
 import Html.Events exposing (onClick)
 import Html.Attributes exposing (..)
 import Json.Decode as Decode
 import Http
+import Task
 
 
-main =
-    Html.program { init = init, view = view, update = update, subscriptions = subscriptions }
+-- DATA --
 
 
 type alias Model =
     { graph : Graph
+    , err : Maybe String
     }
-
-
-init : ( Model, Cmd Msg )
-init =
-    ( { graph = emptyGraph
-      }
-    , updateTypes
-    )
-
-
-type Msg
-    = RefreshNodes
-    | UpdateNodes (Result Http.Error (List Node))
-    | RefreshTypes
-    | UpdateTypes (Result Http.Error (List NodeType))
-    | AddNode NodeType
-    | AddedNode (Result Http.Error AddNodeResult)
-
-
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
-    case msg of
-        RefreshNodes ->
-            ( model, updateNodes )
-
-        UpdateNodes (Ok newNodes) ->
-            ( { model | graph = { types = model.graph.types, nodes = newNodes } }, Cmd.none )
-
-        UpdateNodes (Err err) ->
-            ( model, Cmd.none )
-
-        RefreshTypes ->
-            ( model, updateTypes )
-
-        UpdateTypes (Ok newTypes) ->
-            ( { model | graph = { types = newTypes, nodes = model.graph.nodes } }, Cmd.none )
-
-        UpdateTypes (Err err) ->
-            ( model, Cmd.none )
-
-        AddNode nodeType ->
-            ( model, addNode nodeType )
-
-        AddedNode (Ok nodeId) ->
-            ( model, updateNodes )
-
-        AddedNode (Err err) ->
-            ( model, Cmd.none )
-
-
-subscriptions : Model -> Sub Msg
-subscriptions model =
-    Sub.none
-
-
-view : Model -> Html Msg
-view model =
-    div []
-        [ button [ onClick RefreshNodes ] [ text "refresh" ]
-        , typesView model
-        , nodesView model
-        ]
-
-
-typesView : Model -> Html Msg
-typesView model =
-    div []
-        [ text "Node types:"
-        , ul [] (List.map typeView model.graph.types)
-        ]
-
-
-typeView : NodeType -> Html Msg
-typeView node =
-    li [] [ button [ onClick (AddNode node) ] [ text node.name ] ]
-
-
-nodesView : Model -> Html Msg
-nodesView model =
-    div [ style [ ( "color", "red" ) ] ] [ text (toString model.graph) ]
 
 
 type alias Ports =
@@ -108,8 +29,8 @@ type alias Port =
 
 
 type alias Edge =
-    { nodeId: Int
-    , portId: Int
+    { nodeId : Int
+    , portId : Int
     }
 
 
@@ -118,7 +39,15 @@ type alias Node =
     , name : String
     , title : String
     , ports : Ports
+    , status : NodeStatus
     }
+
+
+type NodeStatus
+    = Stopped
+    | Running
+    | Paused
+    | Dead
 
 
 type alias NodeType =
@@ -133,33 +62,98 @@ type alias Graph =
     }
 
 
+type Msg
+    = Refresh
+    | RefreshNodes (Result Http.Error (List Node))
+    | UpdateTypes (Result Http.Error (List NodeType))
+    | AddNode NodeType
+    | AddedNode (Result Http.Error AddNodeResult)
+
+
+type alias AddNodeResult =
+    Result String Int
+
+
 emptyGraph =
     { nodes = []
     , types = []
     }
 
 
-updateNodes : Cmd Msg
-updateNodes =
-    let
-        url =
-            "http://localhost:8008/node"
 
-        request =
-            Http.get url decodeNodes
-    in
-        Http.send UpdateNodes request
+-- VIEW --
+
+
+typesView : Model -> Html Msg
+typesView model =
+    div []
+        [ text "Node types:"
+        , ol [] (List.map typeView model.graph.types)
+        ]
+
+
+typeView : NodeType -> Html Msg
+typeView node =
+    li [] [ button [ onClick (AddNode node) ] [ text node.name ] ]
+
+
+nodesView : Model -> Html Msg
+nodesView model =
+    div []
+        [ text "Nodes:"
+        , ol [] (List.map nodeView model.graph.nodes)
+        ]
+
+
+nodeView : Node -> Html Msg
+nodeView node =
+    li []
+        [ div []
+            [ b [] [ text node.name ]
+            , text (" : " ++ node.title ++ " (" ++ toString node.status ++ ")")
+            , br [] []
+            , text "Inputs:"
+            , ol [] (List.map portView node.ports.input)
+            , text "Outputs:"
+            , ol [] (List.map portView node.ports.output)
+            ]
+        ]
+
+
+portView : Port -> Html Msg
+portView port_ =
+    li []
+        [ Maybe.withDefault
+            (text "Disconnected")
+            (Maybe.map edgeView port_.edge)
+        ]
+
+
+edgeView : Edge -> Html Msg
+edgeView edge =
+    b [] [ text (toString edge.nodeId ++ ":" ++ toString edge.portId) ]
+
+
+errorView : Model -> Html Msg
+errorView model =
+    div [ style [ ( "color", "red" ) ] ] [ text (Maybe.withDefault "" model.err) ]
+
+
+
+-- DECODE --
 
 
 decodeNodes : Decode.Decoder (List Node)
 decodeNodes =
     Decode.list
-        (Decode.map4 Node
+        (Decode.map5 Node
             (Decode.field "id" Decode.int)
             (Decode.field "name" Decode.string)
             (Decode.field "title" Decode.string)
             (Decode.field "ports" decodePorts)
+            (Decode.field "status" decodeNodeStatus)
         )
+
 
 decodePorts : Decode.Decoder Ports
 decodePorts =
@@ -170,22 +164,13 @@ decodePorts =
 
 decodePort : Decode.Decoder Port
 decodePort =
-    Decode.map Port (Decode.maybe (Decode.map2 Edge
-        (Decode.at ["edge", "node"] Decode.int)
-        (Decode.at ["edge", "port"] Decode.int))
-    )
-
-
-updateTypes : Cmd Msg
-updateTypes =
-    let
-        url =
-            "http://localhost:8008/type"
-
-        request =
-            Http.get url decodeTypes
-    in
-        Http.send UpdateTypes request
+    Decode.map Port
+        (Decode.maybe
+            (Decode.map2 Edge
+                (Decode.at [ "edge", "node" ] Decode.int)
+                (Decode.at [ "edge", "port" ] Decode.int)
+            )
+        )
 
 
 decodeTypes : Decode.Decoder (List NodeType)
@@ -197,8 +182,40 @@ decodeTypes =
         )
 
 
-type alias AddNodeResult =
-    Result String Int
+decodeAddNode : Decode.Decoder (Result String Int)
+decodeAddNode =
+    Decode.andThen
+        (\status ->
+            if status == "ok" then
+                Decode.map Ok (Decode.field "id" Decode.int)
+            else
+                Decode.succeed (Err status)
+        )
+        (Decode.field "status" Decode.string)
+
+
+decodeNodeStatus : Decode.Decoder NodeStatus
+decodeNodeStatus =
+    Decode.map
+        (\msg ->
+            case msg of
+                "stopped" ->
+                    Stopped
+
+                "running" ->
+                    Running
+
+                "paused" ->
+                    Paused
+
+                _ ->
+                    Dead
+        )
+        Decode.string
+
+
+
+-- ACTIONS --
 
 
 addNode : NodeType -> Cmd Msg
@@ -213,13 +230,101 @@ addNode nodeType =
         Http.send AddedNode request
 
 
-decodeAddNode : Decode.Decoder (Result String Int)
-decodeAddNode =
-    Decode.andThen
-        (\status ->
-            if status == "ok" then
-                Decode.map Ok (Decode.field "id" Decode.int)
-            else
-                Decode.succeed (Err status)
-        )
-        (Decode.field "status" Decode.string)
+
+-- REFRESH --
+
+
+refreshNodes : Cmd Msg
+refreshNodes =
+    let
+        url =
+            "http://localhost:8008/node"
+
+        request =
+            Http.get url decodeNodes
+    in
+        Http.send RefreshNodes request
+
+
+refreshTypes : Cmd Msg
+refreshTypes =
+    let
+        url =
+            "http://localhost:8008/type"
+
+        request =
+            Http.get url decodeTypes
+    in
+        Http.send UpdateTypes request
+
+
+refresh =
+    Cmd.batch [ refreshTypes, refreshNodes ]
+
+
+
+-- ERROR --
+
+
+raiseError : Model -> String -> Model
+raiseError model err =
+    { model | err = Just err }
+
+
+
+-- SPECIAL FUNCTIONS --
+
+
+init : ( Model, Cmd Msg )
+init =
+    ( { graph = emptyGraph
+      , err = Nothing
+      }
+    , refresh
+    )
+
+
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        Refresh ->
+            ( model, Cmd.batch [ refreshNodes, refreshTypes ] )
+
+        RefreshNodes (Ok newNodes) ->
+            ( { model | graph = { types = model.graph.types, nodes = newNodes } }, Cmd.none )
+
+        RefreshNodes (Err err) ->
+            ( raiseError model (toString err), Cmd.none )
+
+        UpdateTypes (Ok newTypes) ->
+            ( { model | graph = { types = newTypes, nodes = model.graph.nodes } }, Cmd.none )
+
+        UpdateTypes (Err err) ->
+            ( raiseError model (toString err), Cmd.none )
+
+        AddNode nodeType ->
+            ( model, addNode nodeType )
+
+        AddedNode (Ok nodeId) ->
+            ( model, refreshNodes )
+
+        AddedNode (Err err) ->
+            ( raiseError model (toString err), Cmd.none )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.none
+
+
+view : Model -> Html Msg
+view model =
+    div []
+        [ errorView model
+        , typesView model
+        , nodesView model
+        ]
+
+
+main =
+    Html.program { init = init, view = view, update = update, subscriptions = subscriptions }
