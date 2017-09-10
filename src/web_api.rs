@@ -114,11 +114,25 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
                     "in": in_ports,
                     "out": out_ports,
                 },
-                "status": "stopped", // TODO
+                "status": status_string(node) // TODO
             })
         })
         .collect();
     Json(json!(nodes))
+}
+
+fn status_string(node: &ActiveNode) -> &'static str {
+    match node.ctl {
+        Some(ref ctl) => {
+            let status = ctl.poll();
+            match status {
+                ControlState::Paused => "paused",
+                ControlState::Running => "running",
+                ControlState::Stopped => "stopped",
+            }
+        }
+        None => "stopped"
+    }
 }
 
 #[get("/type/<type_id>/new")]

@@ -8,6 +8,11 @@ import Http
 import Task
 
 
+apiUrl =
+    "http://localhost:8008/"
+
+
+
 -- DATA --
 
 
@@ -74,7 +79,6 @@ type NodeStatus
     = Stopped
     | Running
     | Paused
-    | Dead
 
 
 type alias NodeType =
@@ -97,7 +101,11 @@ type Msg
     | AddedNode (Result Http.Error AddNodeResult)
     | StartConnecting Node Port
     | DoConnect Node Port Node Port
-    | DidConnect (Result Http.Error Decode.Value)
+    | Connected (Result Http.Error Decode.Value)
+    | RunNode Node
+    | PauseNode Node
+    | RanNode (Result Http.Error Decode.Value)
+    | PausedNode (Result Http.Error Decode.Value)
 
 
 type alias AddNodeResult =
@@ -140,14 +148,40 @@ nodeView model node =
     li []
         [ div []
             [ b [] [ text node.name ]
-            , text (" : " ++ node.title ++ " (" ++ toString node.status ++ ")")
-            , br [] []
+            , text (" : " ++ node.title)
+            , nodeStatusView model node
             , text "Inputs:"
             , ol [] (List.map (portView model node) node.ports.input)
             , text "Outputs:"
             , ol [] (List.map (portView model node) node.ports.output)
             ]
         ]
+
+
+nodeStatusView : Model -> Node -> Html Msg
+nodeStatusView model node =
+    div []
+        ([ text ("(" ++ toString node.status ++ ") ") ]
+            ++ if fullyConnected node then
+                [ (let
+                    ( label, action ) =
+                        case node.status of
+                            Stopped ->
+                                ( "Run", RunNode node )
+
+                            Paused ->
+                                ( "Resume", RunNode node )
+
+                            Running ->
+                                ( "Pause", PauseNode node )
+                   in
+                    button [ onClick action ]
+                        [ text label ]
+                  )
+                ]
+               else
+                []
+        )
 
 
 portView : Model -> Node -> Port -> Html Msg
@@ -271,7 +305,7 @@ decodeNodeStatus =
                     Paused
 
                 _ ->
-                    Dead
+                    Stopped
         )
         Decode.string
 
@@ -284,7 +318,7 @@ addNode : NodeType -> Cmd Msg
 addNode nodeType =
     let
         url =
-            "http://localhost:8008/type/" ++ toString nodeType.id ++ "/new"
+            apiUrl ++ "type/" ++ toString nodeType.id ++ "/new"
 
         request =
             Http.get url decodeAddNode
@@ -300,7 +334,7 @@ refreshNodes : Cmd Msg
 refreshNodes =
     let
         url =
-            "http://localhost:8008/node"
+            apiUrl ++ "node"
 
         request =
             Http.get url decodeNodes
@@ -312,7 +346,7 @@ refreshTypes : Cmd Msg
 refreshTypes =
     let
         url =
-            "http://localhost:8008/type"
+            apiUrl ++ "type"
 
         request =
             Http.get url decodeTypes
@@ -332,7 +366,8 @@ doConnect : Node -> Port -> Node -> Port -> Cmd Msg
 doConnect srcNode srcPort dstNode dstPort =
     let
         url =
-            "http://localhost:8008/node/connect/"
+            apiUrl
+                ++ "node/connect/"
                 ++ toString srcNode.id
                 ++ "/"
                 ++ toString srcPort.id
@@ -344,10 +379,51 @@ doConnect srcNode srcPort dstNode dstPort =
         request =
             Http.get url decodeConnect
     in
-        Http.send DidConnect request
+        Http.send Connected request
 
 
 decodeConnect =
+    Decode.value
+
+
+fullyConnected node =
+    List.all portIsConnected node.ports.input
+        && List.all portIsConnected node.ports.output
+
+
+portIsConnected port_ =
+    port_.edge /= Nothing
+
+
+
+-- CONTROL STATUS --
+
+
+runNode : Node -> Cmd Msg
+runNode node =
+    let
+        url =
+            apiUrl ++ "node/" ++ toString node.id ++ "/set_status/run"
+
+        request =
+            Http.get url decodeStatusUpdate
+    in
+        Http.send RanNode request
+
+
+pauseNode : Node -> Cmd Msg
+pauseNode node =
+    let
+        url =
+            apiUrl ++ "node/" ++ toString node.id ++ "/set_status/pause"
+
+        request =
+            Http.get url decodeStatusUpdate
+    in
+        Http.send PausedNode request
+
+
+decodeStatusUpdate =
     Decode.value
 
 
@@ -405,10 +481,28 @@ update msg model =
         DoConnect srcNode srcPort dstNode dstPort ->
             ( { model | mode = Normal }, doConnect srcNode srcPort dstNode dstPort )
 
-        DidConnect (Ok value) ->
+        Connected (Ok value) ->
             ( model, refreshNodes )
 
-        DidConnect (Err err) ->
+        Connected (Err err) ->
+            ( raiseError model (toString err), Cmd.none )
+
+        RunNode node ->
+            ( model, runNode node )
+
+        RanNode (Ok value) ->
+            ( model, refreshNodes )
+
+        RanNode (Err err) ->
+            ( raiseError model (toString err), Cmd.none )
+
+        PauseNode node ->
+            ( model, pauseNode node )
+
+        PausedNode (Ok value) ->
+            ( model, refreshNodes )
+
+        PausedNode (Err err) ->
             ( raiseError model (toString err), Cmd.none )
 
 
