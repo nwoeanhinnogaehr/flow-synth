@@ -14,6 +14,26 @@ import Task
 type alias Model =
     { graph : Graph
     , err : Maybe String
+    , mode : Mode
+    }
+
+
+emptyModel =
+    { graph = emptyGraph
+    , err = Nothing
+    , mode = Normal
+    }
+
+
+type Mode
+    = Normal
+    | Connecting ConnectingState
+
+
+type alias ConnectingState =
+    { node : Node
+    , port_ : Port
+    , portType : PortType
     }
 
 
@@ -24,8 +44,15 @@ type alias Ports =
 
 
 type alias Port =
-    { edge : Maybe Edge
+    { id : Int
+    , edge : Maybe Edge
+    , portType : PortType
     }
+
+
+type PortType
+    = Input
+    | Output
 
 
 type alias Edge =
@@ -68,6 +95,9 @@ type Msg
     | UpdateTypes (Result Http.Error (List NodeType))
     | AddNode NodeType
     | AddedNode (Result Http.Error AddNodeResult)
+    | StartConnecting Node Port
+    | DoConnect Node Port Node Port
+    | DidConnect (Result Http.Error Decode.Value)
 
 
 type alias AddNodeResult =
@@ -88,12 +118,12 @@ typesView : Model -> Html Msg
 typesView model =
     div []
         [ text "Node types:"
-        , ol [] (List.map typeView model.graph.types)
+        , ol [] (List.map (typeView model) model.graph.types)
         ]
 
 
-typeView : NodeType -> Html Msg
-typeView node =
+typeView : Model -> NodeType -> Html Msg
+typeView model node =
     li [] [ button [ onClick (AddNode node) ] [ text node.name ] ]
 
 
@@ -101,36 +131,66 @@ nodesView : Model -> Html Msg
 nodesView model =
     div []
         [ text "Nodes:"
-        , ol [] (List.map nodeView model.graph.nodes)
+        , ol [] (List.map (nodeView model) model.graph.nodes)
         ]
 
 
-nodeView : Node -> Html Msg
-nodeView node =
+nodeView : Model -> Node -> Html Msg
+nodeView model node =
     li []
         [ div []
             [ b [] [ text node.name ]
             , text (" : " ++ node.title ++ " (" ++ toString node.status ++ ")")
             , br [] []
             , text "Inputs:"
-            , ol [] (List.map portView node.ports.input)
+            , ol [] (List.map (portView model node) node.ports.input)
             , text "Outputs:"
-            , ol [] (List.map portView node.ports.output)
+            , ol [] (List.map (portView model node) node.ports.output)
             ]
         ]
 
 
-portView : Port -> Html Msg
-portView port_ =
+portView : Model -> Node -> Port -> Html Msg
+portView model node port_ =
     li []
-        [ Maybe.withDefault
-            (text "Disconnected")
-            (Maybe.map edgeView port_.edge)
-        ]
+        (case model.mode of
+            Normal ->
+                [ Maybe.withDefault
+                    (div []
+                        [ text "Disconnected. "
+                        , button [ onClick (StartConnecting node port_) ] [ text "Connect this..." ]
+                        ]
+                    )
+                    (Maybe.map (edgeView model) port_.edge)
+                ]
+
+            Connecting state ->
+                if state.portType /= port_.portType then
+                    [ (Maybe.withDefault
+                        (button
+                            [ onClick
+                                (if state.portType == Output then
+                                    DoConnect state.node state.port_ node port_
+                                 else
+                                    DoConnect node port_ state.node state.port_
+                                )
+                            ]
+                            [ text "Connect here" ]
+                        )
+                        (Maybe.map (edgeView model) port_.edge)
+                      )
+                    ]
+                else
+                    [ (Maybe.withDefault
+                        (text "Disconnected.")
+                        (Maybe.map (edgeView model) port_.edge)
+                      )
+                    ]
+        )
 
 
-edgeView : Edge -> Html Msg
-edgeView edge =
+edgeView : Model -> Edge -> Html Msg
+edgeView model edge =
     b [] [ text (toString edge.nodeId ++ ":" ++ toString edge.portId) ]
 
 
@@ -158,19 +218,21 @@ decodeNodes =
 decodePorts : Decode.Decoder Ports
 decodePorts =
     Decode.map2 Ports
-        (Decode.field "in" (Decode.list decodePort))
-        (Decode.field "out" (Decode.list decodePort))
+        (Decode.field "in" (Decode.list (decodePort Input)))
+        (Decode.field "out" (Decode.list (decodePort Output)))
 
 
-decodePort : Decode.Decoder Port
-decodePort =
-    Decode.map Port
+decodePort : PortType -> Decode.Decoder Port
+decodePort portType =
+    Decode.map3 Port
+        (Decode.field "id" Decode.int)
         (Decode.maybe
             (Decode.map2 Edge
                 (Decode.at [ "edge", "node" ] Decode.int)
                 (Decode.at [ "edge", "port" ] Decode.int)
             )
         )
+        (Decode.succeed portType)
 
 
 decodeTypes : Decode.Decoder (List NodeType)
@@ -215,7 +277,7 @@ decodeNodeStatus =
 
 
 
--- ACTIONS --
+-- ADD NODE --
 
 
 addNode : NodeType -> Cmd Msg
@@ -263,6 +325,33 @@ refresh =
 
 
 
+-- CONNECT --
+
+
+doConnect : Node -> Port -> Node -> Port -> Cmd Msg
+doConnect srcNode srcPort dstNode dstPort =
+    let
+        url =
+            "http://localhost:8008/node/connect/"
+                ++ toString srcNode.id
+                ++ "/"
+                ++ toString srcPort.id
+                ++ "/to/"
+                ++ toString dstNode.id
+                ++ "/"
+                ++ toString dstPort.id
+
+        request =
+            Http.get url decodeConnect
+    in
+        Http.send DidConnect request
+
+
+decodeConnect =
+    Decode.value
+
+
+
 -- ERROR --
 
 
@@ -277,9 +366,7 @@ raiseError model err =
 
 init : ( Model, Cmd Msg )
 init =
-    ( { graph = emptyGraph
-      , err = Nothing
-      }
+    ( emptyModel
     , refresh
     )
 
@@ -310,6 +397,18 @@ update msg model =
             ( model, refreshNodes )
 
         AddedNode (Err err) ->
+            ( raiseError model (toString err), Cmd.none )
+
+        StartConnecting node port_ ->
+            ( { model | mode = Connecting { node = node, port_ = port_, portType = port_.portType } }, Cmd.none )
+
+        DoConnect srcNode srcPort dstNode dstPort ->
+            ( { model | mode = Normal }, doConnect srcNode srcPort dstNode dstPort )
+
+        DidConnect (Ok value) ->
+            ( model, refreshNodes )
+
+        DidConnect (Err err) ->
             ( raiseError model (toString err), Cmd.none )
 
 
