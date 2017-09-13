@@ -67,8 +67,8 @@ impl NodeInstance for AudioIO {
 
                     // shuffle data
                     let lock = ctx.lock();
-                    for (input, out_port) in input_ports.iter().zip(lock.node().out_ports()) {
-                        lock.write(out_port.id(), input).unwrap();
+                    for (input, out_port) in input_ports.into_iter().zip(lock.node().out_ports()) {
+                        lock.write(out_port.id(), &input).unwrap();
                     }
                     // to avoid xruns, don't block, just skip instead.
                     if lock.node()

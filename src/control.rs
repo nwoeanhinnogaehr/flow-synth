@@ -10,7 +10,9 @@ pub trait NodeDescriptor {
 }
 
 pub trait NodeInstance: Send + Sync {
-    fn title(&self) -> String;
+    fn title(&self) -> String {
+        "".into()
+    }
     fn run(&mut self) -> Arc<RemoteControl>;
     fn node(&self) -> &Node;
 }

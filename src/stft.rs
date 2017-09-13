@@ -7,6 +7,38 @@ use rustfft::num_traits::Zero;
 use std::collections::VecDeque;
 use apodize;
 use std::iter;
+use super::control::*;
+use std::sync::Arc;
+
+struct Stft {
+    ctx: Arc<Context>,
+    node_ctx: Option<NodeContext>,
+    node: Arc<Node>,
+}
+
+impl NodeDescriptor for Stft {
+    const NAME: &'static str = "STFT";
+    fn new(ctx: Arc<Context>) -> Box<NodeInstance> {
+        let id = ctx.graph().add_node(2, 2);
+        let node_ctx = ctx.node_ctx(id).unwrap();
+        let node = ctx.graph().node(id);
+        Box::new(Stft {
+            ctx,
+            node_ctx: Some(node_ctx),
+            node,
+        })
+    }
+}
+
+impl NodeInstance for Stft {
+    fn run(&mut self) -> Arc<RemoteControl> {
+        run_stft(self.node_ctx.take().unwrap(), 2048, 512);
+        Arc::new(RemoteControl::new())
+    }
+    fn node(&self) -> &Node {
+        &*self.node
+    }
+}
 
 type T = f32; // fix this because generic numbers are so annoying
 
@@ -97,7 +129,7 @@ pub fn run_stft_render(ctx: NodeContext, size: usize) {
     thread::spawn(move || loop {
         // TODO rewrite this so we can drop the lock during processing
         let lock = ctx.lock();
-        let mut frame = lock.node().in_ports().iter().map(|port| {
+        let mut frame = lock.node().in_ports().into_iter().map(|port| {
             lock.wait(|lock| lock.available::<Complex<f32>>(port.id()) >= size);
             lock.read_n::<Complex<f32>>(port.id(), size).unwrap()
         });
