@@ -17,6 +17,7 @@ impl NodeDescriptor for AudioIO {
         let id = ctx.graph().add_node(2, 2);
         let node_ctx = ctx.node_ctx(id).unwrap();
         let node = ctx.graph().node(id);
+        node.set_port_lock(true);
         Box::new(AudioIO {
             ctx,
             node_ctx: Some(node_ctx),
