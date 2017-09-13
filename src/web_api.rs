@@ -1,17 +1,14 @@
 use rocket;
-use std::io;
-use rocket::response::{Response, Stream};
 use modular_flow::context::Context;
 use modular_flow::graph::*;
 use std::sync::Arc;
 use rocket_contrib::{Json, Value};
 use rocket::State;
 use audio_io;
+use stft;
 use std::sync::RwLock;
 use rocket_cors;
-use rocket::http::Method;
-use rocket_cors::{AllowedHeaders, AllowedOrigins};
-use super::control::*;
+use control::*;
 
 struct StaticNode {
     name: &'static str,
@@ -22,6 +19,10 @@ const TYPES: &'static [StaticNode] = &[
     StaticNode {
         name: audio_io::AudioIO::NAME,
         make: audio_io::AudioIO::new,
+    },
+    StaticNode {
+        name: stft::Stft::NAME,
+        make: stft::Stft::new,
     },
 ];
 
@@ -46,7 +47,7 @@ impl WebApi {
 }
 
 #[get("/type")]
-fn type_list(this: State<WebApi>) -> Json<Value> {
+fn type_list() -> Json<Value> {
     let types: Vec<_> = TYPES
         .iter()
         .enumerate()

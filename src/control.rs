@@ -1,6 +1,7 @@
 use std::thread::{self, Thread};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::collections::VecDeque;
 use modular_flow::context::Context;
 use modular_flow::graph::*;
 
@@ -17,6 +18,27 @@ pub trait NodeInstance: Send + Sync {
     fn node(&self) -> &Node;
 }
 
+pub enum MessageArgType {
+    Bool,
+    Int,
+    Float,
+    String,
+}
+pub enum MessageArg {
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    String(String),
+}
+pub struct MessageDescriptor {
+    name: &'static str,
+    args: Vec<MessageArgType>
+}
+pub struct Message {
+    desc: MessageDescriptor,
+    args: Vec<MessageArg>,
+}
+
 pub enum ControlState {
     Running,
     Paused,
@@ -27,15 +49,28 @@ pub struct RemoteControl {
     stop_thread: Mutex<Option<Thread>>,
     paused: AtomicBool,
     stopped: AtomicBool,
+    messages: Vec<MessageDescriptor>,
+    msg_queue: Mutex<VecDeque<Message>>,
 }
 impl RemoteControl {
-    pub fn new() -> RemoteControl {
+    pub fn new(messages: Vec<MessageDescriptor>) -> RemoteControl {
         RemoteControl {
             pause_thread: Mutex::new(None),
             stop_thread: Mutex::new(None),
             paused: AtomicBool::new(false),
             stopped: AtomicBool::new(false),
+            messages,
+            msg_queue: Mutex::new(VecDeque::new()),
         }
+    }
+    pub fn message_descriptors(&self) -> &[MessageDescriptor] {
+        &self.messages
+    }
+    pub fn send_message(&self, msg: Message) {
+        self.msg_queue.lock().unwrap().push_back(msg);
+    }
+    pub fn recv_message(&self) -> Option<Message> {
+        self.msg_queue.lock().unwrap().pop_front()
     }
     /**
      * Never returns `ControlState::Paused`, instead blocking until control is resumed.

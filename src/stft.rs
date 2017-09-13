@@ -10,7 +10,7 @@ use std::iter;
 use super::control::*;
 use std::sync::Arc;
 
-struct Stft {
+pub struct Stft {
     ctx: Arc<Context>,
     node_ctx: Option<NodeContext>,
     node: Arc<Node>,
@@ -33,7 +33,7 @@ impl NodeDescriptor for Stft {
 impl NodeInstance for Stft {
     fn run(&mut self) -> Arc<RemoteControl> {
         run_stft(self.node_ctx.take().unwrap(), 2048, 512);
-        Arc::new(RemoteControl::new())
+        Arc::new(RemoteControl::new(Vec::new()))
     }
     fn node(&self) -> &Node {
         &*self.node

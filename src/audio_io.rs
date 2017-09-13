@@ -31,7 +31,7 @@ impl NodeInstance for AudioIO {
         format!("{}/{}", self.node.in_ports().len(), self.node.out_ports().len())
     }
     fn run(&mut self) -> Arc<RemoteControl> {
-        let remote_ctl = Arc::new(RemoteControl::new());
+        let remote_ctl = Arc::new(RemoteControl::new(Vec::new()));
         let ctl = remote_ctl.clone();
         let ctx = self.node_ctx.take().unwrap();
         let n_inputs = ctx.node().in_ports().len();
