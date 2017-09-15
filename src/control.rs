@@ -31,12 +31,12 @@ pub enum MessageArg {
     String(String),
 }
 pub struct MessageDescriptor {
-    name: &'static str,
-    args: Vec<MessageArgType>
+    pub name: &'static str,
+    pub args: Vec<MessageArgType>,
 }
 pub struct Message {
-    desc: MessageDescriptor,
-    args: Vec<MessageArg>,
+    pub desc: MessageDescriptor,
+    pub args: Vec<MessageArg>,
 }
 
 pub enum ControlState {
