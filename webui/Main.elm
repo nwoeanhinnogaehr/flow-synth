@@ -1,6 +1,6 @@
 module Main exposing (..)
 
-import Html exposing (Html, button, div, text, ol, li, b, i, br, code)
+import Html exposing (Html, button, div, text, ol, ul, li, b, i, br, code)
 import Html.Events exposing (onClick)
 import Html.Attributes exposing (..)
 import Json.Decode as Decode
@@ -154,11 +154,19 @@ nodeView model node =
         [ div []
             [ b [] [ text node.name ]
             , nodeStatusView model node
+            , ul [] (List.map (messageDescriptorView model node) node.messageDescriptors)
             , text "Inputs:"
             , ol [] (List.map (portView model node) node.ports.input)
             , text "Outputs:"
             , ol [] (List.map (portView model node) node.ports.output)
             ]
+        ]
+
+
+messageDescriptorView : Model -> Node -> MessageDescriptor -> Html Msg
+messageDescriptorView model node desc =
+    li []
+        [ button [] [ text desc.name ]
         ]
 
 

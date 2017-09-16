@@ -5,7 +5,7 @@ use std::thread;
 use super::control::{ControlState, NodeDescriptor, RemoteControl};
 use std::sync::Arc;
 
-pub struct AudioIO { }
+pub struct AudioIO {}
 
 impl NodeDescriptor for AudioIO {
     const NAME: &'static str = "audio I/O";
@@ -99,4 +99,3 @@ impl NodeDescriptor for AudioIO {
         remote_ctl
     }
 }
-

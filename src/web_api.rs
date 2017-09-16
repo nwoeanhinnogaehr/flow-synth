@@ -68,7 +68,8 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
         .enumerate()
         .map(|(idx, node)| {
             // TODO better abstraction
-            let in_ports: Vec<_> = node.ctl.node()
+            let in_ports: Vec<_> = node.ctl
+                .node()
                 .in_ports()
                 .iter()
                 .enumerate()
@@ -106,15 +107,15 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
                 })
                 .collect();
             let message_descriptors: Vec<_> = node.ctl
-                    .message_descriptors()
-                        .iter()
-                        .map(|msg| {
-                            json!({
-                                "name": msg.name,
-                                "args": msg.args.iter().map(|arg| format!("{:?}", arg)).collect::<Vec<_>>(),
-                            })
-                        })
-                        .collect();
+                .message_descriptors()
+                .iter()
+                .map(|msg| {
+                    json!({
+                        "name": msg.name,
+                        "args": msg.args.iter().map(|arg| format!("{:?}", arg)).collect::<Vec<_>>(),
+                    })
+                })
+                .collect();
             json!({
                 "id": idx,
                 "name": node.static_node.name,
@@ -191,7 +192,7 @@ fn set_node_status(this: State<WebApi>, node_id: usize, status: String) -> Json<
                 }
                 _ => json_err("cannot run from this state"),
             }
-        },
+        }
         "pause" => {
             let status = node.ctl.poll();
             match status {
@@ -201,7 +202,7 @@ fn set_node_status(this: State<WebApi>, node_id: usize, status: String) -> Json<
                 }
                 _ => json_err("cannot pause from this state"),
             }
-        },
+        }
         _ => json_err("invalid status"),
     }
 }

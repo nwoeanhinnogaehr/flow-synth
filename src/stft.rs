@@ -10,7 +10,7 @@ use std::iter;
 use super::control::*;
 use std::sync::Arc;
 
-pub struct Stft { }
+pub struct Stft {}
 
 impl NodeDescriptor for Stft {
     const NAME: &'static str = "STFT";
@@ -19,7 +19,15 @@ impl NodeDescriptor for Stft {
         let node_ctx = ctx.node_ctx(id).unwrap();
         let node = ctx.graph().node(id);
         run_stft(node_ctx, 2048, 512);
-        Arc::new(RemoteControl::new(node, vec![ MessageDescriptor { name: "foo", args: vec![] } ]))
+        Arc::new(RemoteControl::new(
+            node,
+            vec![
+                MessageDescriptor {
+                    name: "foo",
+                    args: vec![],
+                },
+            ],
+        ))
     }
 }
 
