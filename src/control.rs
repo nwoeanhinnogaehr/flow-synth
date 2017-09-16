@@ -96,6 +96,9 @@ impl RemoteControl {
             ControlState::Running
         }
     }
+
+    // these should wait until the node has acknowledged the state change
+    // before they return
     pub fn pause(&self) {
         self.paused.store(true, Ordering::Release);
     }
@@ -107,6 +110,7 @@ impl RemoteControl {
         self.stopped.store(true, Ordering::Release);
         self.stop_thread.lock().unwrap().as_ref().map(|thread| thread.unpark());
     }
+
     pub fn node(&self) -> &Node {
         &*self.node
     }
