@@ -114,7 +114,8 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
                         .iter()
                         .map(|msg| {
                             json!({
-                                "name": msg.name
+                                "name": msg.name,
+                                "args": msg.args.iter().map(|arg| format!("{:?}", arg)).collect::<Vec<_>>(),
                             })
                         })
                         .collect()

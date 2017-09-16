@@ -18,6 +18,7 @@ pub trait NodeInstance: Send + Sync {
     fn node(&self) -> &Node;
 }
 
+#[derive(Debug)]
 pub enum MessageArgType {
     Bool,
     Int,
