@@ -7,15 +7,7 @@ use modular_flow::graph::*;
 
 pub trait NodeDescriptor {
     const NAME: &'static str;
-    fn new(Arc<Context>) -> Box<NodeInstance>;
-}
-
-pub trait NodeInstance: Send + Sync {
-    fn title(&self) -> String {
-        "".into()
-    }
-    fn run(&mut self) -> Arc<RemoteControl>;
-    fn node(&self) -> &Node;
+    fn new(Arc<Context>) -> Arc<RemoteControl>;
 }
 
 #[derive(Debug)]
@@ -46,6 +38,7 @@ pub enum ControlState {
     Stopped,
 }
 pub struct RemoteControl {
+    node: Arc<Node>,
     pause_thread: Mutex<Option<Thread>>,
     stop_thread: Mutex<Option<Thread>>,
     paused: AtomicBool,
@@ -54,11 +47,12 @@ pub struct RemoteControl {
     msg_queue: Mutex<VecDeque<Message>>,
 }
 impl RemoteControl {
-    pub fn new(messages: Vec<MessageDescriptor>) -> RemoteControl {
+    pub fn new(node: Arc<Node>, messages: Vec<MessageDescriptor>) -> RemoteControl {
         RemoteControl {
+            node,
             pause_thread: Mutex::new(None),
             stop_thread: Mutex::new(None),
-            paused: AtomicBool::new(false),
+            paused: AtomicBool::new(true), // paused by default to allow initialization
             stopped: AtomicBool::new(false),
             messages,
             msg_queue: Mutex::new(VecDeque::new()),
@@ -112,5 +106,8 @@ impl RemoteControl {
     pub fn stop(&self) {
         self.stopped.store(true, Ordering::Release);
         self.stop_thread.lock().unwrap().as_ref().map(|thread| thread.unpark());
+    }
+    pub fn node(&self) -> &Node {
+        &*self.node
     }
 }

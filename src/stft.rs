@@ -10,33 +10,16 @@ use std::iter;
 use super::control::*;
 use std::sync::Arc;
 
-pub struct Stft {
-    ctx: Arc<Context>,
-    node_ctx: Option<NodeContext>,
-    node: Arc<Node>,
-}
+pub struct Stft { }
 
 impl NodeDescriptor for Stft {
     const NAME: &'static str = "STFT";
-    fn new(ctx: Arc<Context>) -> Box<NodeInstance> {
+    fn new(ctx: Arc<Context>) -> Arc<RemoteControl> {
         let id = ctx.graph().add_node(2, 2);
         let node_ctx = ctx.node_ctx(id).unwrap();
         let node = ctx.graph().node(id);
-        Box::new(Stft {
-            ctx,
-            node_ctx: Some(node_ctx),
-            node,
-        })
-    }
-}
-
-impl NodeInstance for Stft {
-    fn run(&mut self) -> Arc<RemoteControl> {
-        run_stft(self.node_ctx.take().unwrap(), 2048, 512);
-        Arc::new(RemoteControl::new(Vec::new()))
-    }
-    fn node(&self) -> &Node {
-        &*self.node
+        run_stft(node_ctx, 2048, 512);
+        Arc::new(RemoteControl::new(node, vec![ MessageDescriptor { name: "foo", args: vec![] } ]))
     }
 }
 

@@ -12,7 +12,7 @@ use control::*;
 
 struct StaticNode {
     name: &'static str,
-    make: fn(Arc<Context>) -> Box<NodeInstance>,
+    make: fn(Arc<Context>) -> Arc<RemoteControl>,
 }
 
 const TYPES: &'static [StaticNode] = &[
@@ -27,8 +27,7 @@ const TYPES: &'static [StaticNode] = &[
 ];
 
 struct ActiveNode {
-    node: Box<NodeInstance>,
-    ctl: Option<Arc<RemoteControl>>,
+    ctl: Arc<RemoteControl>,
     static_node: &'static StaticNode,
 }
 
@@ -69,8 +68,7 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
         .enumerate()
         .map(|(idx, node)| {
             // TODO better abstraction
-            let in_ports: Vec<_> = node.node
-                .node()
+            let in_ports: Vec<_> = node.ctl.node()
                 .in_ports()
                 .iter()
                 .enumerate()
@@ -88,7 +86,7 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
                         .unwrap_or(json!({"id": idx}))
                 })
                 .collect();
-            let out_ports: Vec<_> = node.node
+            let out_ports: Vec<_> = node.ctl
                 .node()
                 .out_ports()
                 .iter()
@@ -108,9 +106,7 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
                 })
                 .collect();
             let message_descriptors: Vec<_> = node.ctl
-                .as_ref()
-                .map(|ctl| {
-                    ctl.message_descriptors()
+                    .message_descriptors()
                         .iter()
                         .map(|msg| {
                             json!({
@@ -118,12 +114,9 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
                                 "args": msg.args.iter().map(|arg| format!("{:?}", arg)).collect::<Vec<_>>(),
                             })
                         })
-                        .collect()
-                })
-                .unwrap_or(Vec::new());
+                        .collect();
             json!({
                 "id": idx,
-                "title": node.node.title(),
                 "name": node.static_node.name,
                 "ports": {
                     "in": in_ports,
@@ -138,16 +131,11 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
 }
 
 fn status_string(node: &ActiveNode) -> &'static str {
-    match node.ctl {
-        Some(ref ctl) => {
-            let status = ctl.poll();
-            match status {
-                ControlState::Paused => "paused",
-                ControlState::Running => "running",
-                ControlState::Stopped => "stopped",
-            }
-        }
-        None => "stopped",
+    let status = node.ctl.poll();
+    match status {
+        ControlState::Paused => "paused",
+        ControlState::Running => "running",
+        ControlState::Stopped => "stopped",
     }
 }
 
@@ -156,11 +144,10 @@ fn node_create(this: State<WebApi>, type_id: usize) -> Json<Value> {
     if type_id >= TYPES.len() {
         return json_err("id out of bounds");
     }
-    let node = (TYPES[type_id].make)(this.ctx.clone());
-    let id = node.node().id().0;
+    let ctl = (TYPES[type_id].make)(this.ctx.clone());
+    let id = ctl.node().id().0;
     this.nodes.write().unwrap().push(ActiveNode {
-        node,
-        ctl: None,
+        ctl,
         static_node: &TYPES[type_id],
     });
     json_ok(json!({
@@ -195,34 +182,25 @@ fn set_node_status(this: State<WebApi>, node_id: usize, status: String) -> Json<
     }
     let node = &mut nodes[node_id];
     match status.as_ref() {
-        "run" => match node.ctl {
-            Some(ref ctl) => {
-                let status = ctl.poll();
-                match status {
-                    ControlState::Paused => {
-                        ctl.resume();
-                        json_ok(json!({}))
-                    }
-                    _ => json_err("cannot run from this state"),
+        "run" => {
+            let status = node.ctl.poll();
+            match status {
+                ControlState::Paused => {
+                    node.ctl.resume();
+                    json_ok(json!({}))
                 }
-            }
-            None => {
-                node.ctl = Some(node.node.run());
-                json_ok(json!({}))
+                _ => json_err("cannot run from this state"),
             }
         },
-        "pause" => match node.ctl {
-            Some(ref ctl) => {
-                let status = ctl.poll();
-                match status {
-                    ControlState::Running => {
-                        ctl.pause();
-                        json_ok(json!({}))
-                    }
-                    _ => json_err("cannot pause from this state"),
+        "pause" => {
+            let status = node.ctl.poll();
+            match status {
+                ControlState::Running => {
+                    node.ctl.pause();
+                    json_ok(json!({}))
                 }
+                _ => json_err("cannot pause from this state"),
             }
-            None => json_err("node not started"),
         },
         _ => json_err("invalid status"),
     }

@@ -2,40 +2,22 @@ use modular_flow::graph::{Node, Port};
 use modular_flow::context::*;
 use jack::prelude::*;
 use std::thread;
-use super::control::{ControlState, NodeDescriptor, NodeInstance, RemoteControl};
+use super::control::{ControlState, NodeDescriptor, RemoteControl};
 use std::sync::Arc;
 
-pub struct AudioIO {
-    ctx: Arc<Context>,
-    node_ctx: Option<NodeContext>,
-    node: Arc<Node>,
-}
+pub struct AudioIO { }
 
 impl NodeDescriptor for AudioIO {
     const NAME: &'static str = "audio I/O";
-    fn new(ctx: Arc<Context>) -> Box<NodeInstance> {
+    fn new(ctx: Arc<Context>) -> Arc<RemoteControl> {
         let id = ctx.graph().add_node(2, 2);
         let node_ctx = ctx.node_ctx(id).unwrap();
         let node = ctx.graph().node(id);
         node.set_port_lock(true);
-        Box::new(AudioIO {
-            ctx,
-            node_ctx: Some(node_ctx),
-            node,
-        })
-    }
-}
-
-impl NodeInstance for AudioIO {
-    fn title(&self) -> String {
-        format!("{}/{}", self.node.in_ports().len(), self.node.out_ports().len())
-    }
-    fn run(&mut self) -> Arc<RemoteControl> {
-        let remote_ctl = Arc::new(RemoteControl::new(Vec::new()));
+        let remote_ctl = Arc::new(RemoteControl::new(node, Vec::new()));
         let ctl = remote_ctl.clone();
-        let ctx = self.node_ctx.take().unwrap();
-        let n_inputs = ctx.node().in_ports().len();
-        let n_outputs = ctx.node().out_ports().len();
+        let n_inputs = node_ctx.node().in_ports().len();
+        let n_outputs = node_ctx.node().out_ports().len();
         thread::spawn(move || {
             // create client
             let (client, _status) = Client::new("flow-synth", client_options::NO_START_SERVER).unwrap();
@@ -67,7 +49,7 @@ impl NodeInstance for AudioIO {
                         outputs.iter_mut().map(|output| AudioOutPort::new(output, ps)).collect();
 
                     // shuffle data
-                    let lock = ctx.lock();
+                    let lock = node_ctx.lock();
                     for (input, out_port) in input_ports.into_iter().zip(lock.node().out_ports()) {
                         lock.write(out_port.id(), &input).unwrap();
                     }
@@ -116,7 +98,5 @@ impl NodeInstance for AudioIO {
         });
         remote_ctl
     }
-    fn node(&self) -> &Node {
-        &*self.node
-    }
 }
+

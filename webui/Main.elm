@@ -69,9 +69,14 @@ type alias Edge =
 type alias Node =
     { id : Int
     , name : String
-    , title : String
     , ports : Ports
     , status : NodeStatus
+    , messageDescriptors : List MessageDescriptor
+    }
+
+
+type alias MessageDescriptor =
+    { name : String
     }
 
 
@@ -148,7 +153,6 @@ nodeView model node =
     li []
         [ div []
             [ b [] [ text node.name ]
-            , text (" : " ++ node.title)
             , nodeStatusView model node
             , text "Inputs:"
             , ol [] (List.map (portView model node) node.ports.input)
@@ -243,10 +247,16 @@ decodeNodes =
         (Decode.map5 Node
             (Decode.field "id" Decode.int)
             (Decode.field "name" Decode.string)
-            (Decode.field "title" Decode.string)
             (Decode.field "ports" decodePorts)
             (Decode.field "status" decodeNodeStatus)
+            (Decode.field "message_descriptors" (Decode.list decodeMessageDescriptor))
         )
+
+
+decodeMessageDescriptor : Decode.Decoder MessageDescriptor
+decodeMessageDescriptor =
+    Decode.map MessageDescriptor
+        (Decode.field "name" Decode.string)
 
 
 decodePorts : Decode.Decoder Ports
