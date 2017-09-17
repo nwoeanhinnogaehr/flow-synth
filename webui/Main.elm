@@ -52,6 +52,7 @@ type alias Port =
     { id : Int
     , edge : Maybe Edge
     , portType : PortType
+    , name : String
     }
 
 
@@ -199,40 +200,44 @@ nodeStatusView model node =
 portView : Model -> Node -> Port -> Html Msg
 portView model node port_ =
     li []
-        (case model.mode of
-            Normal ->
-                [ Maybe.withDefault
-                    (div []
-                        [ text "Disconnected. "
-                        , button [ onClick (StartConnecting node port_) ] [ text "Connect this..." ]
-                        ]
-                    )
-                    (Maybe.map (edgeView model) port_.edge)
-                ]
-
-            Connecting state ->
-                if state.portType /= port_.portType then
-                    [ (Maybe.withDefault
-                        (button
-                            [ onClick
-                                (if state.portType == Output then
-                                    DoConnect state.node state.port_ node port_
-                                 else
-                                    DoConnect node port_ state.node state.port_
+        [ div []
+            (text port_.name
+                :: (case model.mode of
+                        Normal ->
+                            [ Maybe.withDefault
+                                (div []
+                                    [ text "Disconnected. "
+                                    , button [ onClick (StartConnecting node port_) ] [ text "Connect this..." ]
+                                    ]
                                 )
+                                (Maybe.map (edgeView model) port_.edge)
                             ]
-                            [ text "Connect here" ]
-                        )
-                        (Maybe.map (edgeView model) port_.edge)
-                      )
-                    ]
-                else
-                    [ (Maybe.withDefault
-                        (text "Disconnected.")
-                        (Maybe.map (edgeView model) port_.edge)
-                      )
-                    ]
-        )
+
+                        Connecting state ->
+                            if state.portType /= port_.portType then
+                                [ (Maybe.withDefault
+                                    (button
+                                        [ onClick
+                                            (if state.portType == Output then
+                                                DoConnect state.node state.port_ node port_
+                                             else
+                                                DoConnect node port_ state.node state.port_
+                                            )
+                                        ]
+                                        [ text "Connect here" ]
+                                    )
+                                    (Maybe.map (edgeView model) port_.edge)
+                                  )
+                                ]
+                            else
+                                [ (Maybe.withDefault
+                                    (text "Disconnected.")
+                                    (Maybe.map (edgeView model) port_.edge)
+                                  )
+                                ]
+                   )
+            )
+        ]
 
 
 edgeView : Model -> Edge -> Html Msg
@@ -276,7 +281,7 @@ decodePorts =
 
 decodePort : PortType -> Decode.Decoder Port
 decodePort portType =
-    Decode.map3 Port
+    Decode.map4 Port
         (Decode.field "id" Decode.int)
         (Decode.maybe
             (Decode.map2 Edge
@@ -285,6 +290,7 @@ decodePort portType =
             )
         )
         (Decode.succeed portType)
+        (Decode.field "name" Decode.string)
 
 
 decodeTypes : Decode.Decoder (List NodeType)

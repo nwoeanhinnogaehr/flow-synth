@@ -81,10 +81,12 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
                                     "node": edge.node.0,
                                     "port": edge.port.0,
                                 },
-                                "id": idx
+                                "id": idx,
+                                "name": port.name(),
+
                             })
                         })
-                        .unwrap_or(json!({"id": idx}))
+                        .unwrap_or(json!({"id": idx, "name": port.name() }))
                 })
                 .collect();
             let out_ports: Vec<_> = node.ctl
@@ -100,10 +102,12 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
                                     "node": edge.node.0,
                                     "port": edge.port.0,
                                 },
-                                "id": idx
+                                "id": idx,
+                                "name": port.name(),
+
                             })
                         })
-                        .unwrap_or(json!({"id": idx}))
+                        .unwrap_or(json!({"id": idx, "name": port.name() }))
                 })
                 .collect();
             let message_descriptors: Vec<_> = node.ctl
