@@ -13,7 +13,6 @@ impl NodeDescriptor for AudioIO {
         let id = ctx.graph().add_node(2, 2);
         let node_ctx = ctx.node_ctx(id).unwrap();
         let node = ctx.graph().node(id);
-        node.set_port_lock(true);
         let remote_ctl = Arc::new(RemoteControl::new(node, Vec::new()));
         let ctl = remote_ctl.clone();
         let n_inputs = node_ctx.node().in_ports().len();
