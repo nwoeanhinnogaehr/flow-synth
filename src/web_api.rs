@@ -161,7 +161,7 @@ fn node_create(this: State<WebApi>, type_id: usize) -> Json<Value> {
 }
 
 #[get("/node/connect/<src_node_id>/<src_port_id>/to/<dst_node_id>/<dst_port_id>")]
-fn node_info(
+fn connect_port(
     this: State<WebApi>,
     src_node_id: usize,
     src_port_id: usize,
@@ -179,7 +179,15 @@ fn node_info(
     }
 }
 
-#[get("/node/<node_id>/set_status/<status>")]
+#[get("/node/disconnect/<node_id>/<port_id>")]
+fn disconnect_port(this: State<WebApi>, node_id: usize, port_id: usize) -> Json<Value> {
+    match this.ctx.graph().disconnect(NodeID(node_id), InPortID(port_id)) {
+        Err(_) => json_err("cannot disconnect: already connected"),
+        Ok(_) => json_ok(json!({})),
+    }
+}
+
+#[get("/node/set_status/<node_id>/<status>")]
 fn set_node_status(this: State<WebApi>, node_id: usize, status: String) -> Json<Value> {
     let mut nodes = this.nodes.write().unwrap();
     if node_id >= nodes.len() {
@@ -214,7 +222,10 @@ fn set_node_status(this: State<WebApi>, node_id: usize, status: String) -> Json<
 pub fn run_server(ctx: Arc<Context>) {
     let options = rocket_cors::Cors::default();
     rocket::ignite()
-        .mount("/", routes![type_list, node_list, node_create, node_info, set_node_status])
+        .mount(
+            "/",
+            routes![type_list, node_list, node_create, connect_port, disconnect_port, set_node_status],
+        )
         .manage(WebApi::new(ctx))
         .attach(options)
         .launch();

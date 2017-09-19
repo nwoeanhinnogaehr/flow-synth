@@ -112,6 +112,8 @@ type Msg
     | PauseNode Node
     | RanNode (Result Http.Error Decode.Value)
     | PausedNode (Result Http.Error Decode.Value)
+    | DoDisconnect Node Port Edge
+    | Disconnected (Result Http.Error Decode.Value)
 
 
 type alias AddNodeResult =
@@ -199,6 +201,7 @@ nodeStatusView model node =
 
 portView : Model -> Node -> Port -> Html Msg
 portView model node port_ =
+    -- what a fucking mess
     li []
         [ div []
             (text port_.name
@@ -210,7 +213,18 @@ portView model node port_ =
                                     , button [ onClick (StartConnecting node port_) ] [ text "Connect this..." ]
                                     ]
                                 )
-                                (Maybe.map (edgeView model) port_.edge)
+                                (Maybe.map
+                                    (\edge ->
+                                        div []
+                                            ((edgeView model edge)
+                                                :: if node.status /= Running then
+                                                    [ button [ onClick (DoDisconnect node port_ edge) ] [ text "Disconnect this" ] ]
+                                                   else
+                                                    []
+                                            )
+                                    )
+                                    port_.edge
+                                )
                             ]
 
                         Connecting state ->
@@ -419,27 +433,51 @@ portIsConnected port_ =
     port_.edge /= Nothing
 
 
+doDisconnect : Node -> Port -> Edge -> Cmd Msg
+doDisconnect node port_ edge =
+    let
+        ( endpointNode, endPointPort ) =
+            case port_.portType of
+                Input ->
+                    ( node.id, port_.id )
+
+                Output ->
+                    ( edge.nodeId, edge.portId )
+
+        url =
+            apiUrl
+                ++ "node/disconnect/"
+                ++ toString endpointNode
+                ++ "/"
+                ++ toString endPointPort
+
+        request =
+            Http.get url decodeDisconnect
+    in
+        Http.send Disconnected request
+
+
+decodeDisconnect =
+    Decode.value
+
+
 
 -- CONTROL STATUS --
 
 
-runNode : Node -> Cmd Msg
-runNode node =
+runNode =
+    setNodeStatus "run"
+
+
+pauseNode =
+    setNodeStatus "pause"
+
+
+setNodeStatus : String -> Node -> Cmd Msg
+setNodeStatus status node =
     let
         url =
-            apiUrl ++ "node/" ++ toString node.id ++ "/set_status/run"
-
-        request =
-            Http.get url decodeStatusUpdate
-    in
-        Http.send RanNode request
-
-
-pauseNode : Node -> Cmd Msg
-pauseNode node =
-    let
-        url =
-            apiUrl ++ "node/" ++ toString node.id ++ "/set_status/pause"
+            apiUrl ++ "node/set_status/" ++ toString node.id ++ "/" ++ status
 
         request =
             Http.get url decodeStatusUpdate
@@ -527,6 +565,15 @@ update msg model =
             ( model, refreshNodes )
 
         PausedNode (Err err) ->
+            ( raiseError model (toString err), Cmd.none )
+
+        DoDisconnect node port_ edge ->
+            ( model, doDisconnect node port_ edge )
+
+        Disconnected (Ok value) ->
+            ( model, refreshNodes )
+
+        Disconnected (Err err) ->
             ( raiseError model (toString err), Cmd.none )
 
 
