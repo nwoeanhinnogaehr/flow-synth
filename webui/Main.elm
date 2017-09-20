@@ -78,6 +78,13 @@ type alias Node =
 
 type alias MessageDescriptor =
     { name : String
+    , args : List MessageArg
+    }
+
+
+type alias MessageArg =
+    { name : String
+    , type_ : String
     }
 
 
@@ -282,8 +289,17 @@ decodeNodes =
 
 decodeMessageDescriptor : Decode.Decoder MessageDescriptor
 decodeMessageDescriptor =
-    Decode.map MessageDescriptor
+    Decode.map2 MessageDescriptor
         (Decode.field "name" Decode.string)
+        (Decode.field "args" (Decode.list decodeMessageArg))
+
+
+decodeMessageArg : Decode.Decoder MessageArg
+decodeMessageArg =
+    -- TODO decode types to enum
+    Decode.map2 MessageArg
+        (Decode.field "name" Decode.string)
+        (Decode.field "type" Decode.string)
 
 
 decodePorts : Decode.Decoder Ports

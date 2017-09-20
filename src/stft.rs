@@ -26,11 +26,11 @@ impl NodeDescriptor for Stft {
         let remote_ctl = Arc::new(RemoteControl::new(
             node,
             vec![
-                MessageDescriptor {
+                message::Desc {
                     name: "Add port",
                     args: vec![],
                 },
-                MessageDescriptor {
+                message::Desc {
                     name: "Remove port",
                     args: vec![],
                 },

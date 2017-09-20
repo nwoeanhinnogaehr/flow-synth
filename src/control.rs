@@ -10,26 +10,33 @@ pub trait NodeDescriptor {
     fn new(Arc<Context>) -> Arc<RemoteControl>;
 }
 
-#[derive(Debug)]
-pub enum MessageArgType {
-    Bool,
-    Int,
-    Float,
-    String,
-}
-pub enum MessageArg {
-    Bool(bool),
-    Int(i64),
-    Float(f64),
-    String(String),
-}
-pub struct MessageDescriptor {
-    pub name: &'static str,
-    pub args: Vec<MessageArgType>,
-}
-pub struct Message {
-    pub desc: MessageDescriptor,
-    pub args: Vec<MessageArg>,
+pub mod message {
+    #[derive(Debug)]
+    pub enum Type {
+        Bool,
+        Int,
+        Float,
+        String,
+    }
+    pub enum Value {
+        Bool(bool),
+        Int(i64),
+        Float(f64),
+        String(String),
+    }
+    #[derive(Debug)]
+    pub struct ArgDesc {
+        pub name: String,
+        pub ty: Type,
+    }
+    pub struct Desc {
+        pub name: &'static str,
+        pub args: Vec<ArgDesc>,
+    }
+    pub struct Message {
+        pub desc: Desc,
+        pub args: Vec<Value>,
+    }
 }
 
 pub enum ControlState {
@@ -43,11 +50,11 @@ pub struct RemoteControl {
     stop_thread: Mutex<Option<Thread>>,
     paused: AtomicBool,
     stopped: AtomicBool,
-    messages: Vec<MessageDescriptor>,
-    msg_queue: Mutex<VecDeque<Message>>,
+    messages: Vec<message::Desc>,
+    msg_queue: Mutex<VecDeque<message::Message>>,
 }
 impl RemoteControl {
-    pub fn new(node: Arc<Node>, messages: Vec<MessageDescriptor>) -> RemoteControl {
+    pub fn new(node: Arc<Node>, messages: Vec<message::Desc>) -> RemoteControl {
         RemoteControl {
             node,
             pause_thread: Mutex::new(None),
@@ -58,13 +65,13 @@ impl RemoteControl {
             msg_queue: Mutex::new(VecDeque::new()),
         }
     }
-    pub fn message_descriptors(&self) -> &[MessageDescriptor] {
+    pub fn message_descriptors(&self) -> &[message::Desc] {
         &self.messages
     }
-    pub fn send_message(&self, msg: Message) {
+    pub fn send_message(&self, msg: message::Message) {
         self.msg_queue.lock().unwrap().push_back(msg);
     }
-    pub fn recv_message(&self) -> Option<Message> {
+    pub fn recv_message(&self) -> Option<message::Message> {
         self.msg_queue.lock().unwrap().pop_front()
     }
     /**
