@@ -1,6 +1,6 @@
 module Main exposing (..)
 
-import Html exposing (Html, button, div, text, ol, ul, li, b, i, br, code)
+import Html exposing (Html, button, div, text, ol, ul, li, b, i, br, code, input)
 import Html.Events exposing (onClick)
 import Html.Attributes exposing (..)
 import Json.Decode as Decode
@@ -107,24 +107,22 @@ type alias Graph =
 
 
 type Msg
-    = Refresh
-    | RefreshNodes (Result Http.Error (List Node))
-    | UpdateTypes (Result Http.Error (List NodeType))
+    = ResponseWrapper (Result Http.Error Msg)
+    | ErrorResponse Decode.Value
+    | Refresh
+    | RefreshNodes (List Node)
+    | RefreshTypes (List NodeType)
     | AddNode NodeType
-    | AddedNode (Result Http.Error AddNodeResult)
+    | AddedNode Int
     | StartConnecting Node Port
     | DoConnect Node Port Node Port
-    | Connected (Result Http.Error Decode.Value)
+    | Connected Decode.Value
     | RunNode Node
     | PauseNode Node
-    | RanNode (Result Http.Error Decode.Value)
-    | PausedNode (Result Http.Error Decode.Value)
+    | RanNode Decode.Value
+    | PausedNode Decode.Value
     | DoDisconnect Node Port Edge
-    | Disconnected (Result Http.Error Decode.Value)
-
-
-type alias AddNodeResult =
-    Result String Int
+    | Disconnected Decode.Value
 
 
 emptyGraph =
@@ -176,8 +174,13 @@ nodeView model node =
 messageDescriptorView : Model -> Node -> MessageDescriptor -> Html Msg
 messageDescriptorView model node desc =
     li []
-        [ button [] [ text desc.name ]
-        ]
+        (List.map
+            (\arg ->
+                input [ placeholder arg.name ] []
+            )
+            desc.args
+            ++ [ button [] [ text desc.name ] ]
+        )
 
 
 nodeStatusView : Model -> Node -> Html Msg
@@ -332,16 +335,9 @@ decodeTypes =
         )
 
 
-decodeAddNode : Decode.Decoder AddNodeResult
+decodeAddNode : Decode.Decoder Int
 decodeAddNode =
-    Decode.andThen
-        (\status ->
-            if status == "ok" then
-                Decode.map Ok (Decode.field "id" Decode.int)
-            else
-                Decode.succeed (Err status)
-        )
-        (Decode.field "status" Decode.string)
+    Decode.field "id" Decode.int
 
 
 decodeNodeStatus : Decode.Decoder NodeStatus
@@ -365,19 +361,42 @@ decodeNodeStatus =
 
 
 
+-- WRAPPER --
+
+
+decodeWrapper msg decoder =
+    Decode.andThen
+        (\status ->
+            if status == "ok" then
+                Decode.map msg
+                    (Decode.field "data" decoder)
+            else
+                Decode.map ErrorResponse (Decode.field "data" Decode.value)
+        )
+        (Decode.field "status" Decode.string)
+
+
+httpGet path decoder msg =
+    let
+        url =
+            apiUrl ++ path
+
+        request =
+            Http.get url (decodeWrapper msg decoder)
+    in
+        Http.send ResponseWrapper request
+
+
+
 -- ADD NODE --
 
 
 addNode : NodeType -> Cmd Msg
 addNode nodeType =
-    let
-        url =
-            apiUrl ++ "type/" ++ toString nodeType.id ++ "/new"
-
-        request =
-            Http.get url decodeAddNode
-    in
-        Http.send AddedNode request
+    httpGet
+        ("type/" ++ toString nodeType.id ++ "/new")
+        decodeAddNode
+        AddedNode
 
 
 
@@ -386,26 +405,18 @@ addNode nodeType =
 
 refreshNodes : Cmd Msg
 refreshNodes =
-    let
-        url =
-            apiUrl ++ "node"
-
-        request =
-            Http.get url decodeNodes
-    in
-        Http.send RefreshNodes request
+    httpGet
+        "node"
+        decodeNodes
+        RefreshNodes
 
 
 refreshTypes : Cmd Msg
 refreshTypes =
-    let
-        url =
-            apiUrl ++ "type"
-
-        request =
-            Http.get url decodeTypes
-    in
-        Http.send UpdateTypes request
+    httpGet
+        "type"
+        decodeTypes
+        RefreshTypes
 
 
 refresh =
@@ -418,22 +429,18 @@ refresh =
 
 doConnect : Node -> Port -> Node -> Port -> Cmd Msg
 doConnect srcNode srcPort dstNode dstPort =
-    let
-        url =
-            apiUrl
-                ++ "node/connect/"
-                ++ toString srcNode.id
-                ++ "/"
-                ++ toString srcPort.id
-                ++ "/to/"
-                ++ toString dstNode.id
-                ++ "/"
-                ++ toString dstPort.id
-
-        request =
-            Http.get url decodeConnect
-    in
-        Http.send Connected request
+    httpGet
+        ("node/connect/"
+            ++ toString srcNode.id
+            ++ "/"
+            ++ toString srcPort.id
+            ++ "/to/"
+            ++ toString dstNode.id
+            ++ "/"
+            ++ toString dstPort.id
+        )
+        decodeConnect
+        Connected
 
 
 decodeConnect =
@@ -461,16 +468,12 @@ doDisconnect node port_ edge =
                     ( edge.nodeId, edge.portId )
 
         url =
-            apiUrl
-                ++ "node/disconnect/"
+            "node/disconnect/"
                 ++ toString endpointNode
                 ++ "/"
                 ++ toString endPointPort
-
-        request =
-            Http.get url decodeDisconnect
     in
-        Http.send Disconnected request
+        httpGet url decodeDisconnect Disconnected
 
 
 decodeDisconnect =
@@ -491,14 +494,10 @@ pauseNode =
 
 setNodeStatus : String -> Node -> Cmd Msg
 setNodeStatus status node =
-    let
-        url =
-            apiUrl ++ "node/set_status/" ++ toString node.id ++ "/" ++ status
-
-        request =
-            Http.get url decodeStatusUpdate
-    in
-        Http.send PausedNode request
+    httpGet
+        ("node/set_status/" ++ toString node.id ++ "/" ++ status)
+        decodeStatusUpdate
+        PausedNode
 
 
 decodeStatusUpdate =
@@ -528,30 +527,29 @@ init =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        ResponseWrapper (Ok nextMsg) ->
+            ( model, Task.perform (\x -> x) (Task.succeed nextMsg) )
+
+        ResponseWrapper (Err err) ->
+            ( raiseError model (toString err), Cmd.none )
+
+        ErrorResponse err ->
+            ( raiseError model ("Server errored: " ++ toString err), Cmd.none )
+
         Refresh ->
             ( model, Cmd.batch [ refreshNodes, refreshTypes ] )
 
-        RefreshNodes (Ok newNodes) ->
+        RefreshNodes newNodes ->
             ( { model | graph = { types = model.graph.types, nodes = newNodes } }, Cmd.none )
 
-        RefreshNodes (Err err) ->
-            ( raiseError model (toString err), Cmd.none )
-
-        UpdateTypes (Ok newTypes) ->
+        RefreshTypes newTypes ->
             ( { model | graph = { types = newTypes, nodes = model.graph.nodes } }, Cmd.none )
-
-        UpdateTypes (Err err) ->
-            ( raiseError model (toString err), Cmd.none )
 
         AddNode nodeType ->
             ( model, addNode nodeType )
 
-        AddedNode (Ok nodeId) ->
-            -- TODO show error here if needed (nodeId :: Result)
+        AddedNode nodeId ->
             ( model, refreshNodes )
-
-        AddedNode (Err err) ->
-            ( raiseError model (toString err), Cmd.none )
 
         StartConnecting node port_ ->
             ( { model | mode = Connecting { node = node, port_ = port_, portType = port_.portType } }, Cmd.none )
@@ -559,38 +557,26 @@ update msg model =
         DoConnect srcNode srcPort dstNode dstPort ->
             ( { model | mode = Normal }, doConnect srcNode srcPort dstNode dstPort )
 
-        Connected (Ok value) ->
+        Connected value ->
             ( model, refreshNodes )
-
-        Connected (Err err) ->
-            ( raiseError model (toString err), Cmd.none )
 
         RunNode node ->
             ( model, runNode node )
 
-        RanNode (Ok value) ->
+        RanNode value ->
             ( model, refreshNodes )
-
-        RanNode (Err err) ->
-            ( raiseError model (toString err), Cmd.none )
 
         PauseNode node ->
             ( model, pauseNode node )
 
-        PausedNode (Ok value) ->
+        PausedNode value ->
             ( model, refreshNodes )
-
-        PausedNode (Err err) ->
-            ( raiseError model (toString err), Cmd.none )
 
         DoDisconnect node port_ edge ->
             ( model, doDisconnect node port_ edge )
 
-        Disconnected (Ok value) ->
+        Disconnected value ->
             ( model, refreshNodes )
-
-        Disconnected (Err err) ->
-            ( raiseError model (toString err), Cmd.none )
 
 
 subscriptions : Model -> Sub Msg

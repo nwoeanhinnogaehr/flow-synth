@@ -11,28 +11,31 @@ pub trait NodeDescriptor {
 }
 
 pub mod message {
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub enum Type {
         Bool,
         Int,
         Float,
         String,
     }
+    #[derive(Clone, Debug)]
     pub enum Value {
         Bool(bool),
         Int(i64),
         Float(f64),
         String(String),
     }
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub struct ArgDesc {
         pub name: String,
         pub ty: Type,
     }
+    #[derive(Clone, Debug)]
     pub struct Desc {
         pub name: &'static str,
         pub args: Vec<ArgDesc>,
     }
+    #[derive(Clone, Debug)]
     pub struct Message {
         pub desc: Desc,
         pub args: Vec<Value>,

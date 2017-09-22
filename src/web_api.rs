@@ -3,12 +3,15 @@ use modular_flow::context::Context;
 use modular_flow::graph::*;
 use std::sync::Arc;
 use rocket_contrib::{Json, Value};
-use rocket::State;
+use rocket::{Request, Response, State};
+use rocket::http::Status;
+use rocket::response::Responder;
 use audio_io;
 use stft;
 use std::sync::RwLock;
 use rocket_cors;
 use control::*;
+use self::message;
 
 struct StaticNode {
     name: &'static str,
@@ -46,7 +49,7 @@ impl WebApi {
 }
 
 #[get("/type")]
-fn type_list() -> Json<Value> {
+fn type_list() -> JsonResult {
     let types: Vec<_> = TYPES
         .iter()
         .enumerate()
@@ -57,11 +60,11 @@ fn type_list() -> Json<Value> {
             })
         })
         .collect();
-    Json(json!(types))
+    resp_ok(json!(types))
 }
 
 #[get("/node")]
-fn node_list(this: State<WebApi>) -> Json<Value> {
+fn node_list(this: State<WebApi>) -> JsonResult {
     let nodes = this.nodes.read().unwrap();
     let nodes: Vec<_> = nodes
         .iter()
@@ -136,7 +139,7 @@ fn node_list(this: State<WebApi>) -> Json<Value> {
             })
         })
         .collect();
-    Json(json!(nodes))
+    resp_ok(json!(nodes))
 }
 
 fn status_string(node: &ActiveNode) -> &'static str {
@@ -149,9 +152,9 @@ fn status_string(node: &ActiveNode) -> &'static str {
 }
 
 #[get("/type/<type_id>/new")]
-fn node_create(this: State<WebApi>, type_id: usize) -> Json<Value> {
+fn node_create(this: State<WebApi>, type_id: usize) -> JsonResult {
     if type_id >= TYPES.len() {
-        return json_err("id out of bounds");
+        return resp_err(json!("id out of bounds"));
     }
     let ctl = (TYPES[type_id].make)(this.ctx.clone());
     let id = ctl.node().id().0;
@@ -159,7 +162,7 @@ fn node_create(this: State<WebApi>, type_id: usize) -> Json<Value> {
         ctl,
         static_node: &TYPES[type_id],
     });
-    json_ok(json!({
+    resp_ok(json!({
         "id": id,
     }))
 }
@@ -171,31 +174,31 @@ fn connect_port(
     src_port_id: usize,
     dst_node_id: usize,
     dst_port_id: usize,
-) -> Json<Value> {
+) -> JsonResult {
     match this.ctx.graph().connect(
         NodeID(src_node_id),
         OutPortID(src_port_id),
         NodeID(dst_node_id),
         InPortID(dst_port_id),
     ) {
-        Err(_) => json_err("cannot connect"),
-        Ok(_) => json_ok(json!({})),
+        Err(_) => resp_err(json!("cannot connect")),
+        Ok(_) => resp_ok(json!({})),
     }
 }
 
 #[get("/node/disconnect/<node_id>/<port_id>")]
-fn disconnect_port(this: State<WebApi>, node_id: usize, port_id: usize) -> Json<Value> {
+fn disconnect_port(this: State<WebApi>, node_id: usize, port_id: usize) -> JsonResult {
     match this.ctx.graph().disconnect(NodeID(node_id), InPortID(port_id)) {
-        Err(_) => json_err("cannot disconnect: already connected"),
-        Ok(_) => json_ok(json!({})),
+        Err(_) => resp_err(json!("cannot disconnect: already connected")),
+        Ok(_) => resp_ok(json!({})),
     }
 }
 
 #[get("/node/set_status/<node_id>/<status>")]
-fn set_node_status(this: State<WebApi>, node_id: usize, status: String) -> Json<Value> {
+fn set_node_status(this: State<WebApi>, node_id: usize, status: String) -> JsonResult {
     let mut nodes = this.nodes.write().unwrap();
     if node_id >= nodes.len() {
-        return json_err("node id out of bounds");
+        return resp_err(json!("node id out of bounds"));
     }
     let node = &mut nodes[node_id];
     match status.as_ref() {
@@ -204,9 +207,9 @@ fn set_node_status(this: State<WebApi>, node_id: usize, status: String) -> Json<
             match status {
                 ControlState::Paused => {
                     node.ctl.resume();
-                    json_ok(json!({}))
+                    resp_ok(json!({}))
                 }
-                _ => json_err("cannot run from this state"),
+                _ => resp_err(json!("cannot run from this state")),
             }
         }
         "pause" => {
@@ -214,13 +217,53 @@ fn set_node_status(this: State<WebApi>, node_id: usize, status: String) -> Json<
             match status {
                 ControlState::Running => {
                     node.ctl.pause();
-                    json_ok(json!({}))
+                    resp_ok(json!({}))
                 }
-                _ => json_err("cannot pause from this state"),
+                _ => resp_err(json!("cannot pause from this state")),
             }
         }
-        _ => json_err("invalid status"),
+        _ => resp_err(json!("invalid status")),
     }
+}
+
+#[post("/node/send_message/<node_id>/<message_id>", format = "application/json", data = "<args>")]
+fn send_message(
+    this: State<WebApi>,
+    node_id: usize,
+    message_id: usize,
+    args: Json<Vec<String>>,
+) -> JsonResult {
+    use self::message::*;
+    let mut nodes = this.nodes.write().unwrap();
+    if node_id >= nodes.len() {
+        return resp_err(json!("node id out of bounds"));
+    }
+    let node = &mut nodes[node_id];
+    let message_descriptor = &node.ctl.message_descriptors()[message_id];
+    let args = args.0;
+    if args.iter().count() != message_descriptor.args.len() {
+        return resp_err(json!("wrong arg count"));
+    }
+    let parsed_args: Result<Vec<_>, _> = args.iter()
+        .zip(message_descriptor.args.iter())
+        .map(|(arg, desc)| {
+            Ok(match desc.ty {
+                Type::Bool => Value::Bool(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
+                Type::Int => Value::Int(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
+                Type::Float => {
+                    Value::Float(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?)
+                }
+                Type::String => Value::String(arg.clone()),
+            })
+        })
+        .collect();
+    let message = Message {
+        desc: message_descriptor.clone(),
+        args: parsed_args?,
+    };
+    resp_ok(json!({
+        "args": []
+    }))
 }
 
 pub fn run_server(ctx: Arc<Context>) {
@@ -228,23 +271,54 @@ pub fn run_server(ctx: Arc<Context>) {
     rocket::ignite()
         .mount(
             "/",
-            routes![type_list, node_list, node_create, connect_port, disconnect_port, set_node_status],
+            routes![
+                type_list,
+                node_list,
+                node_create,
+                connect_port,
+                disconnect_port,
+                set_node_status,
+                send_message,
+            ],
         )
         .manage(WebApi::new(ctx))
         .attach(options)
         .launch();
 }
 
-fn json_err<S: AsRef<str>>(msg: S) -> Json<Value> {
-    assert!(msg.as_ref() != "ok");
-    Json(json!({
-        "status": msg.as_ref()
-    }))
+#[derive(Debug)]
+struct JsonErr(Json<Value>);
+struct JsonOk(Json<Value>);
+
+type JsonResult = Result<JsonOk, JsonErr>;
+
+fn resp_err(data: Value) -> JsonResult {
+    Err(JsonErr(Json(data)))
+}
+fn resp_ok(data: Value) -> JsonResult {
+    Ok(JsonOk(Json(data)))
 }
 
-fn json_ok(mut msg: Value) -> Json<Value> {
-    if let Value::Object(ref mut map) = msg {
-        map.insert("status".into(), "ok".into());
+impl Responder<'static> for JsonOk {
+    fn respond_to(self, req: &Request) -> Result<Response<'static>, Status> {
+        let JsonOk(json) = self;
+        let Json(value) = json;
+        let out = Json(json!({
+            "status": "ok",
+            "data": value,
+        }));
+        out.respond_to(req)
     }
-    Json(msg)
+}
+
+impl Responder<'static> for JsonErr {
+    fn respond_to(self, req: &Request) -> Result<Response<'static>, Status> {
+        let JsonErr(json) = self;
+        let Json(value) = json;
+        let out = Json(json!({
+            "status": "err",
+            "data": value,
+        }));
+        out.respond_to(req)
+    }
 }
