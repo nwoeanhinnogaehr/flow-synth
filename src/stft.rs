@@ -17,7 +17,7 @@ impl NodeDescriptor for Stft {
     fn new(ctx: Arc<Context>) -> Arc<RemoteControl> {
         let id = ctx.graph().add_node(0, 0);
         let node_ctx = ctx.node_ctx(id).unwrap();
-        let node = ctx.graph().node(id);
+        let node = ctx.graph().node(id).unwrap();
 
         // TODO add ports for params
         let size = 2048;
