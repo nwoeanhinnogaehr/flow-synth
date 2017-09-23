@@ -15,7 +15,7 @@ pub struct Stft {}
 impl NodeDescriptor for Stft {
     const NAME: &'static str = "STFT";
     fn new(ctx: Arc<Context>) -> Arc<RemoteControl> {
-        let id = ctx.graph().add_node(2, 2);
+        let id = ctx.graph().add_node(0, 0);
         let node_ctx = ctx.node_ctx(id).unwrap();
         let node = ctx.graph().node(id);
 
@@ -40,14 +40,9 @@ impl NodeDescriptor for Stft {
         let ctl = remote_ctl.clone();
         let window: Vec<T> = apodize::hanning_iter(size).map(|x| x.sqrt() as T).collect();
         thread::spawn(move || {
-            let mut queues = vec![
-                {
-                    let mut q = VecDeque::<T>::new();
-                    q.extend(vec![0.0; size - hop]);
-                    q
-                };
-                node_ctx.node().in_ports().len()
-            ];
+            let mut empty_q = VecDeque::<T>::new();
+            empty_q.extend(vec![0.0; size - hop]);
+            let mut queues = vec![];
             let mut input = vec![Complex::zero(); size];
             let mut output = vec![Complex::zero(); size];
 
@@ -55,9 +50,25 @@ impl NodeDescriptor for Stft {
             let fft = planner.plan_fft(size);
 
             loop {
-                ctl.poll_state_blocking();
                 while let Some(msg) = ctl.recv_message() {
-                    println!("{:?}", msg);
+                    match msg.desc.name {
+                        "Add port" => {
+                            node_ctx.node().push_in_port();
+                            node_ctx.node().push_out_port();
+                            queues.push(empty_q.clone());
+                        }
+                        "Remove port" => {
+                            node_ctx.node().pop_in_port();
+                            node_ctx.node().pop_out_port();
+                            queues.pop();
+                        }
+                        _ => panic!()
+                    }
+                }
+                match ctl.poll() {
+                    ControlState::Stopped => break,
+                    ControlState::Paused => continue,
+                    _ => (),
                 }
                 for ((in_port, out_port), queue) in
                     node_ctx.node().in_ports().iter().zip(node_ctx.node().out_ports()).zip(queues.iter_mut())
