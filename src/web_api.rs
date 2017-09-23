@@ -116,8 +116,10 @@ fn node_list(this: State<WebApi>) -> JsonResult {
             let message_descriptors: Vec<_> = node.ctl
                 .message_descriptors()
                 .iter()
-                .map(|msg| {
+                .enumerate()
+                .map(|(idx, msg)| {
                     json!({
+                        "id": idx,
                         "name": msg.name,
                         "args": msg.args.iter().map(|arg|
                             json!({
@@ -261,9 +263,8 @@ fn send_message(
         desc: message_descriptor.clone(),
         args: parsed_args?,
     };
-    resp_ok(json!({
-        "args": []
-    }))
+    node.ctl.send_message(message);
+    resp_ok(json!({}))
 }
 
 pub fn run_server(ctx: Arc<Context>) {

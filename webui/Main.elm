@@ -4,6 +4,7 @@ import Html exposing (Html, button, div, text, ol, ul, li, b, i, br, code, input
 import Html.Events exposing (onClick)
 import Html.Attributes exposing (..)
 import Json.Decode as Decode
+import Json.Encode as Encode
 import Http
 import Task
 
@@ -77,15 +78,26 @@ type alias Node =
 
 
 type alias MessageDescriptor =
+    { id : Int
+    , name : String
+    , args : List MessageDescArg
+    }
+
+
+type alias MessageDescArg =
     { name : String
+    , type_ : String
+    }
+
+
+type alias Message =
+    { id : Int
     , args : List MessageArg
     }
 
 
 type alias MessageArg =
-    { name : String
-    , type_ : String
-    }
+    String
 
 
 type NodeStatus
@@ -123,6 +135,8 @@ type Msg
     | PausedNode Decode.Value
     | DoDisconnect Node Port Edge
     | Disconnected Decode.Value
+    | SendMessage Node Message
+    | SentMessage Decode.Value
 
 
 emptyGraph =
@@ -179,7 +193,7 @@ messageDescriptorView model node desc =
                 input [ placeholder arg.name ] []
             )
             desc.args
-            ++ [ button [] [ text desc.name ] ]
+            ++ [ button [ onClick (SendMessage node { id = desc.id, args = [] }) ] [ text desc.name ] ]
         )
 
 
@@ -292,15 +306,16 @@ decodeNodes =
 
 decodeMessageDescriptor : Decode.Decoder MessageDescriptor
 decodeMessageDescriptor =
-    Decode.map2 MessageDescriptor
+    Decode.map3 MessageDescriptor
+        (Decode.field "id" Decode.int)
         (Decode.field "name" Decode.string)
-        (Decode.field "args" (Decode.list decodeMessageArg))
+        (Decode.field "args" (Decode.list decodeMessageDescArg))
 
 
-decodeMessageArg : Decode.Decoder MessageArg
-decodeMessageArg =
+decodeMessageDescArg : Decode.Decoder MessageDescArg
+decodeMessageDescArg =
     -- TODO decode types to enum
-    Decode.map2 MessageArg
+    Decode.map2 MessageDescArg
         (Decode.field "name" Decode.string)
         (Decode.field "type" Decode.string)
 
@@ -383,6 +398,17 @@ httpGet path decoder msg =
 
         request =
             Http.get url (decodeWrapper msg decoder)
+    in
+        Http.send ResponseWrapper request
+
+
+httpPost path body decoder msg =
+    let
+        url =
+            apiUrl ++ path
+
+        request =
+            Http.post url (Http.jsonBody body) (decodeWrapper msg decoder)
     in
         Http.send ResponseWrapper request
 
@@ -505,6 +531,18 @@ decodeStatusUpdate =
 
 
 
+-- MESSAGES --
+
+
+sendMessage node msg =
+    httpPost
+        ("/node/send_message/" ++ toString node.id ++ "/" ++ toString msg.id)
+        (Encode.list (List.map Encode.string msg.args))
+        Decode.value
+        SentMessage
+
+
+
 -- ERROR --
 
 
@@ -576,6 +614,12 @@ update msg model =
             ( model, doDisconnect node port_ edge )
 
         Disconnected value ->
+            ( model, refreshNodes )
+
+        SendMessage node message ->
+            ( model, sendMessage node message )
+
+        SentMessage value ->
             ( model, refreshNodes )
 
 

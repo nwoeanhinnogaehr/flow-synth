@@ -56,6 +56,9 @@ impl NodeDescriptor for Stft {
 
             loop {
                 ctl.poll_state_blocking();
+                while let Some(msg) = ctl.recv_message() {
+                    println!("{:?}", msg);
+                }
                 for ((in_port, out_port), queue) in
                     node_ctx.node().in_ports().iter().zip(node_ctx.node().out_ports()).zip(queues.iter_mut())
                 {
