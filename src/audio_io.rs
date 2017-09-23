@@ -56,7 +56,7 @@ impl NodeDescriptor for AudioIO {
                     if lock.node()
                         .in_ports()
                         .iter()
-                        .all(|in_port| lock.available::<f32>(in_port.id()) >= client.buffer_size() as usize)
+                        .all(|in_port| lock.available::<f32>(in_port.id()).unwrap_or(0) >= client.buffer_size() as usize)
                     {
                         for (output, in_port) in output_ports.iter_mut().zip(lock.node().in_ports()) {
                             let read = lock.read_n(in_port.id(), client.buffer_size() as usize).unwrap();

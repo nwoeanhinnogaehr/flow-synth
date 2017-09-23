@@ -74,7 +74,7 @@ impl NodeDescriptor for Stft {
                     node_ctx.node().in_ports().iter().zip(node_ctx.node().out_ports()).zip(queues.iter_mut())
                 {
                     let lock = node_ctx.lock();
-                    lock.wait(|lock| lock.available::<T>(in_port.id()) >= hop);
+                    lock.wait(|lock| Ok(lock.available::<T>(in_port.id())? >= hop));
                     queue.extend(lock.read_n::<T>(in_port.id(), hop).unwrap());
                     drop(lock);
 
@@ -116,7 +116,7 @@ pub fn run_istft(ctx: NodeContext, size: usize, hop: usize) {
                 ctx.node().in_ports().iter().zip(ctx.node().out_ports()).zip(queues.iter_mut())
             {
                 let lock = ctx.lock();
-                lock.wait(|lock| lock.available::<Complex<T>>(in_port.id()) >= size / 2);
+                lock.wait(|lock| Ok(lock.available::<Complex<T>>(in_port.id())? >= size / 2));
                 let frame = lock.read_n::<Complex<T>>(in_port.id(), size / 2).unwrap();
                 drop(lock);
                 queue.extend(vec![0.0; hop]);
@@ -143,7 +143,7 @@ pub fn run_stft_render(ctx: NodeContext, size: usize) {
         // TODO rewrite this so we can drop the lock during processing
         let lock = ctx.lock();
         let mut frame = lock.node().in_ports().into_iter().map(|port| {
-            lock.wait(|lock| lock.available::<Complex<T>>(port.id()) >= size);
+            lock.wait(|lock| Ok(lock.available::<Complex<T>>(port.id())? >= size));
             lock.read_n::<Complex<T>>(port.id(), size).unwrap()
         });
         let ch1 = frame.next().unwrap();

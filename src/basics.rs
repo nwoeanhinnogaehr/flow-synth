@@ -13,7 +13,7 @@ where
         for (in_port, out_port) in ctx.node().in_ports().iter().zip(ctx.node().out_ports()) {
             // get input
             let lock = ctx.lock();
-            lock.wait(|lock| lock.available::<T>(in_port.id()) >= 1);
+            lock.wait(|lock| Ok(lock.available::<T>(in_port.id())? >= 1));
             let mut data = lock.read::<T>(in_port.id()).unwrap();
 
             // process
@@ -34,7 +34,9 @@ where
     thread::spawn(move || loop {
         // get input
         let lock = ctx.lock();
-        lock.wait(|lock| lock.node().in_ports().iter().all(|port| lock.available::<T>(port.id()) >= 1));
+        for port in lock.node().in_ports().iter() {
+            lock.wait(|lock| Ok(lock.available::<T>(port.id())? >= 1));
+        }
         let data: Vec<T> =
             lock.node().in_ports().iter().map(|port| lock.read_n::<T>(port.id(), 1).unwrap()[0]).collect();
 
@@ -59,7 +61,9 @@ pub fn run_port_idx_map(ctx: NodeContext, map: Vec<usize>) {
         // get input
         let lock = ctx.lock();
         // TODO we can ignore inputs that are unused in the map
-        lock.wait(|lock| lock.node().in_ports().iter().all(|port| lock.available::<u8>(port.id()) >= 1));
+        for port in lock.node().in_ports().iter() {
+            lock.wait(|lock| Ok(lock.available::<u8>(port.id())? >= 1));
+        }
         let data: Vec<_> =
             lock.node().in_ports().iter().map(|port| lock.read::<u8>(port.id()).unwrap()).collect();
 
@@ -80,7 +84,7 @@ pub fn run_identity(ctx: NodeContext) {
         for (in_data, out_port) in ctx.node()
             .in_ports()
             .iter()
-            .inspect(|port| lock.wait(|lock| lock.available::<u8>(port.id()) >= 1))
+            .inspect(|port| lock.wait(|lock| Ok(lock.available::<u8>(port.id())? >= 1)).unwrap()) // TODO
             .map(|port| lock.read::<u8>(port.id()).unwrap())
             .zip(ctx.node().out_ports().iter())
         {

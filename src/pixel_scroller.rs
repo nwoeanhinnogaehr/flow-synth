@@ -56,8 +56,8 @@ pub fn run_pixel_scroller(ctx: NodeContext, width: usize, height: usize) {
             let mut scroll_pos = 0;
 
             let lock = ctx.lock();
-            lock.wait(|lock| lock.available::<u32>(InPortID(0)) >= width);
-            let available_pixels = lock.available::<u32>(InPortID(0));
+            lock.wait(|lock| Ok(lock.available::<u32>(InPortID(0))? >= width));
+            let available_pixels = lock.available::<u32>(InPortID(0)).unwrap_or(0);
             if available_pixels >= width {
                 let frames = lock.read_n::<u32>(InPortID(0), available_pixels / width * width).unwrap();
                 drop(lock);
