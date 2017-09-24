@@ -1,4 +1,4 @@
-use modular_flow::graph::{Node, Port};
+use modular_flow::graph::Port;
 use modular_flow::context::*;
 use jack::prelude::*;
 use std::thread;
