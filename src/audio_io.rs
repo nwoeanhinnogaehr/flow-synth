@@ -2,7 +2,7 @@ use modular_flow::graph::{Port, Result};
 use modular_flow::context::*;
 use jack::prelude::*;
 use std::thread;
-use super::control::{ControlState, NodeDescriptor, RemoteControl};
+use super::control::{NodeDescriptor, RemoteControl};
 use std::sync::Arc;
 use std::boxed::FnBox;
 
@@ -36,10 +36,8 @@ impl NodeDescriptor for AudioIO {
 
             let processor =
                 ClosureProcessHandler::new(move |client: &Client, ps: &ProcessScope| -> JackControl {
-                    match inner_ctl.poll() {
-                        ControlState::Stopped => return JackControl::Quit,
-                        ControlState::Paused => return JackControl::Continue,
-                        _ => (),
+                    if inner_ctl.stopped() {
+                        return JackControl::Quit;
                     }
 
                     let res: Result<()> = do catch {
@@ -50,9 +48,7 @@ impl NodeDescriptor for AudioIO {
                             outputs.iter_mut().map(|output| AudioOutPort::new(output, ps)).collect();
 
                         // shuffle data
-                        let in_lock_list = node_ctx.node().in_ports();
-                        let out_lock_list = node_ctx.node().out_ports();
-                        let lock = node_ctx.lock(&in_lock_list, &out_lock_list);
+                        let lock = node_ctx.lock(&node_ctx.node().in_ports(), &node_ctx.node().out_ports());
                         for (input, out_port) in input_ports.into_iter().zip(lock.node().out_ports()) {
                             lock.write(out_port.id(), &input)?;
                         }

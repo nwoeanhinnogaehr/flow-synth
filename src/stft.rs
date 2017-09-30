@@ -68,19 +68,13 @@ impl NodeDescriptor for Stft {
                         _ => panic!()
                     }
                 }
-                {
-                    let in_lock_list = node_ctx.node().in_ports();
-                    let out_lock_list = node_ctx.node().out_ports();
-                    let lock = node_ctx.lock(&in_lock_list, &out_lock_list);
-                    lock.sleep();
-                }
+                node_ctx.lock_all().sleep(); // wait for next event
                 let res: Result<()> = do catch {
                     for ((in_port, out_port), queue) in
                         node_ctx.node().in_ports().iter().zip(node_ctx.node().out_ports()).zip(queues.iter_mut())
                         {
                             {
-                                let lock_list = [in_port.clone()];
-                                let lock = node_ctx.lock(&lock_list, &[]);
+                                let lock = node_ctx.lock(&[in_port.clone()], &[]);
                                 lock.wait(|lock| Ok(lock.available::<T>(in_port.id())? >= hop))?;
                                 queue.extend(lock.read_n::<T>(in_port.id(), hop)?);
                             }
@@ -93,8 +87,7 @@ impl NodeDescriptor for Stft {
                             fft.process(&mut input, &mut output);
 
                             {
-                                let lock_list = [out_port.clone()];
-                                let lock = node_ctx.lock(&[], &lock_list);
+                                let lock = node_ctx.lock(&[], &[out_port.clone()]);
                                 lock.write(out_port.id(), &output[..output.len() / 2])?;
                             }
                         }

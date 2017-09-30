@@ -145,11 +145,10 @@ fn node_list(this: State<WebApi>) -> JsonResult {
 }
 
 fn status_string(node: &ActiveNode) -> &'static str {
-    let status = node.ctl.poll();
-    match status {
-        ControlState::Paused => "paused",
-        ControlState::Running => "running",
-        ControlState::Stopped => "stopped",
+    if node.ctl.stopped() {
+        "stopped"
+    } else {
+        "running"
     }
 }
 
@@ -195,7 +194,7 @@ fn disconnect_port(this: State<WebApi>, node_id: usize, port_id: usize) -> JsonR
         Ok(_) => resp_ok(json!({})),
     }
 }
-
+// TODO this should probably just change into a thing to stop and delete nodes
 #[get("/node/set_status/<node_id>/<status>")]
 fn set_node_status(this: State<WebApi>, node_id: usize, status: String) -> JsonResult {
     let mut nodes = this.nodes.write().unwrap();
@@ -203,29 +202,7 @@ fn set_node_status(this: State<WebApi>, node_id: usize, status: String) -> JsonR
         return resp_err(json!("node id out of bounds"));
     }
     let node = &mut nodes[node_id];
-    match status.as_ref() {
-        "run" => {
-            let status = node.ctl.poll();
-            match status {
-                ControlState::Paused => {
-                    node.ctl.resume();
-                    resp_ok(json!({}))
-                }
-                _ => resp_err(json!("cannot run from this state")),
-            }
-        }
-        "pause" => {
-            let status = node.ctl.poll();
-            match status {
-                ControlState::Running => {
-                    node.ctl.pause();
-                    resp_ok(json!({}))
-                }
-                _ => resp_err(json!("cannot pause from this state")),
-            }
-        }
-        _ => resp_err(json!("invalid status")),
-    }
+    resp_err(json!("unimplemented"))
 }
 
 #[post("/node/send_message/<node_id>/<message_id>", format = "application/json", data = "<args>")]
