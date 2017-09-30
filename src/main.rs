@@ -1,5 +1,7 @@
 #![feature(specialization)]
 #![feature(plugin)]
+#![feature(catch_expr)]
+#![feature(fnbox)]
 #![plugin(rocket_codegen)]
 
 extern crate apodize;
@@ -14,9 +16,9 @@ extern crate rustfft;
 extern crate sdl2;
 
 mod audio_io;
-mod basics;
+//mod basics;
 mod stft;
-mod pixel_scroller;
+//mod pixel_scroller;
 mod web_api;
 mod control;
 

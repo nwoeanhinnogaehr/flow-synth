@@ -48,6 +48,7 @@ pub enum ControlState {
     Stopped,
 }
 pub struct RemoteControl {
+    ctx: Arc<Context>,
     node: Arc<Node>,
     pause_thread: Mutex<Option<Thread>>,
     stop_thread: Mutex<Option<Thread>>,
@@ -57,8 +58,9 @@ pub struct RemoteControl {
     msg_queue: Mutex<VecDeque<message::Message>>,
 }
 impl RemoteControl {
-    pub fn new(node: Arc<Node>, messages: Vec<message::Desc>) -> RemoteControl {
+    pub fn new(ctx: Arc<Context>, node: Arc<Node>, messages: Vec<message::Desc>) -> RemoteControl {
         RemoteControl {
+            ctx,
             node,
             pause_thread: Mutex::new(None),
             stop_thread: Mutex::new(None),
@@ -73,6 +75,13 @@ impl RemoteControl {
     }
     pub fn send_message(&self, msg: message::Message) {
         self.msg_queue.lock().unwrap().push_back(msg);
+        self.node.set_aborting(true);
+        for port in self.node.in_ports().iter() {
+            port.notify();
+        }
+        for port in self.node.out_ports().iter() {
+            port.notify();
+        }
     }
     pub fn recv_message(&self) -> Option<message::Message> {
         self.msg_queue.lock().unwrap().pop_front()
@@ -86,7 +95,7 @@ impl RemoteControl {
             return ControlState::Stopped;
         }
         assert!(self.pause_thread.lock().unwrap().as_ref().unwrap().id() == thread::current().id());
-        while self.paused.load(Ordering::Acquire) {
+        while self.paused.load(Ordering::Acquire) && !self.node.aborting() {
             thread::park();
         }
         ControlState::Running
@@ -110,6 +119,7 @@ impl RemoteControl {
     // these should wait until the node has acknowledged the state change
     // before they return
     pub fn pause(&self) {
+        self.ctx.graph().abort(self.node.id()).unwrap();
         self.paused.store(true, Ordering::Release);
     }
     pub fn resume(&self) {
@@ -117,6 +127,7 @@ impl RemoteControl {
         self.pause_thread.lock().unwrap().as_ref().map(|thread| thread.unpark());
     }
     pub fn stop(&self) {
+        self.ctx.graph().abort(self.node.id()).unwrap();
         self.stopped.store(true, Ordering::Release);
         self.stop_thread.lock().unwrap().as_ref().map(|thread| thread.unpark());
     }

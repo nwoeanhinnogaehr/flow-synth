@@ -1,9 +1,10 @@
-use modular_flow::graph::Port;
+use modular_flow::graph::{Port, Result};
 use modular_flow::context::*;
 use jack::prelude::*;
 use std::thread;
 use super::control::{ControlState, NodeDescriptor, RemoteControl};
 use std::sync::Arc;
+use std::boxed::FnBox;
 
 pub struct AudioIO {}
 
@@ -13,7 +14,7 @@ impl NodeDescriptor for AudioIO {
         let id = ctx.graph().add_node(2, 2);
         let node_ctx = ctx.node_ctx(id).unwrap();
         let node = ctx.graph().node(id).unwrap();
-        let remote_ctl = Arc::new(RemoteControl::new(node, Vec::new()));
+        let remote_ctl = Arc::new(RemoteControl::new(ctx, node, Vec::new()));
         let ctl = remote_ctl.clone();
         let n_inputs = node_ctx.node().in_ports().len();
         let n_outputs = node_ctx.node().out_ports().len();
@@ -41,27 +42,35 @@ impl NodeDescriptor for AudioIO {
                         _ => (),
                     }
 
-                    // get port buffers
-                    let input_ports: Vec<_> =
-                        inputs.iter().map(|input| AudioInPort::new(input, ps)).collect();
-                    let mut output_ports: Vec<_> =
-                        outputs.iter_mut().map(|output| AudioOutPort::new(output, ps)).collect();
+                    let res: Result<()> = do catch {
+                        // get port buffers
+                        let input_ports: Vec<_> =
+                            inputs.iter().map(|input| AudioInPort::new(input, ps)).collect();
+                        let mut output_ports: Vec<_> =
+                            outputs.iter_mut().map(|output| AudioOutPort::new(output, ps)).collect();
 
-                    // shuffle data
-                    let lock = node_ctx.lock();
-                    for (input, out_port) in input_ports.into_iter().zip(lock.node().out_ports()) {
-                        lock.write(out_port.id(), &input).unwrap();
-                    }
-                    // to avoid xruns, don't block, just skip instead.
-                    if lock.node()
-                        .in_ports()
-                        .iter()
-                        .all(|in_port| lock.available::<f32>(in_port.id()).unwrap_or(0) >= client.buffer_size() as usize)
-                    {
-                        for (output, in_port) in output_ports.iter_mut().zip(lock.node().in_ports()) {
-                            let read = lock.read_n(in_port.id(), client.buffer_size() as usize).unwrap();
-                            output.copy_from_slice(&read);
+                        // shuffle data
+                        let in_lock_list = node_ctx.node().in_ports();
+                        let out_lock_list = node_ctx.node().out_ports();
+                        let lock = node_ctx.lock(&in_lock_list, &out_lock_list);
+                        for (input, out_port) in input_ports.into_iter().zip(lock.node().out_ports()) {
+                            lock.write(out_port.id(), &input)?;
                         }
+                        // to avoid xruns, don't block, just skip instead.
+                        if lock.node()
+                            .in_ports()
+                            .iter()
+                            .all(|in_port| lock.available::<f32>(in_port.id()).unwrap_or(0) >= client.buffer_size() as usize)
+                        {
+                            for (output, in_port) in output_ports.iter_mut().zip(lock.node().in_ports()) {
+                                let read = lock.read_n(in_port.id(), client.buffer_size() as usize)?;
+                                output.copy_from_slice(&read);
+                            }
+                        }
+                        Ok(())
+                    };
+                    if let Err(e) = res {
+                        println!("{:?}", e);
                     }
 
                     // do it forever

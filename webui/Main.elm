@@ -631,7 +631,8 @@ subscriptions model =
 view : Model -> Html Msg
 view model =
     div []
-        [ errorView model
+        [ button [ onClick Refresh ] [ text "refresh" ]
+        , errorView model
         , typesView model
         , nodesView model
         ]

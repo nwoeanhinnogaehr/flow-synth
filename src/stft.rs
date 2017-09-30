@@ -15,7 +15,7 @@ pub struct Stft {}
 impl NodeDescriptor for Stft {
     const NAME: &'static str = "STFT";
     fn new(ctx: Arc<Context>) -> Arc<RemoteControl> {
-        let id = ctx.graph().add_node(0, 0);
+        let id = ctx.graph().add_node(1, 1);
         let node_ctx = ctx.node_ctx(id).unwrap();
         let node = ctx.graph().node(id).unwrap();
 
@@ -24,6 +24,7 @@ impl NodeDescriptor for Stft {
         let hop = 256;
 
         let remote_ctl = Arc::new(RemoteControl::new(
+            ctx,
             node,
             vec![
                 message::Desc {
@@ -42,7 +43,7 @@ impl NodeDescriptor for Stft {
         thread::spawn(move || {
             let mut empty_q = VecDeque::<T>::new();
             empty_q.extend(vec![0.0; size - hop]);
-            let mut queues = vec![];
+            let mut queues = vec![empty_q.clone()];
             let mut input = vec![Complex::zero(); size];
             let mut output = vec![Complex::zero(); size];
 
@@ -58,6 +59,8 @@ impl NodeDescriptor for Stft {
                             queues.push(empty_q.clone());
                         }
                         "Remove port" => {
+                            node_ctx.node().in_ports().last().map(|port| node_ctx.graph().disconnect(node_ctx.node().id(), port.id()));
+                            node_ctx.node().out_ports().last().map(|port| port.edge().map(|edge| node_ctx.graph().disconnect(edge.node, edge.port)));
                             node_ctx.node().pop_in_port();
                             node_ctx.node().pop_out_port();
                             queues.pop();
@@ -65,35 +68,48 @@ impl NodeDescriptor for Stft {
                         _ => panic!()
                     }
                 }
-                match ctl.poll() {
-                    ControlState::Stopped => break,
-                    ControlState::Paused => continue,
-                    _ => (),
-                }
-                for ((in_port, out_port), queue) in
-                    node_ctx.node().in_ports().iter().zip(node_ctx.node().out_ports()).zip(queues.iter_mut())
                 {
-                    let lock = node_ctx.lock();
-                    lock.wait(|lock| Ok(lock.available::<T>(in_port.id())? >= hop));
-                    queue.extend(lock.read_n::<T>(in_port.id(), hop).unwrap());
-                    drop(lock);
+                    let in_lock_list = node_ctx.node().in_ports();
+                    let out_lock_list = node_ctx.node().out_ports();
+                    let lock = node_ctx.lock(&in_lock_list, &out_lock_list);
+                    lock.sleep();
+                }
+                let res: Result<()> = do catch {
+                    for ((in_port, out_port), queue) in
+                        node_ctx.node().in_ports().iter().zip(node_ctx.node().out_ports()).zip(queues.iter_mut())
+                        {
+                            {
+                                let lock_list = [in_port.clone()];
+                                let lock = node_ctx.lock(&lock_list, &[]);
+                                lock.wait(|lock| Ok(lock.available::<T>(in_port.id())? >= hop))?;
+                                queue.extend(lock.read_n::<T>(in_port.id(), hop)?);
+                            }
 
-                    for ((dst, src), mul) in input.iter_mut().zip(queue.iter()).zip(&window) {
-                        dst.re = *src * mul;
-                        dst.im = 0.0;
-                    }
-                    queue.drain(..hop);
-                    fft.process(&mut input, &mut output);
+                            for ((dst, src), mul) in input.iter_mut().zip(queue.iter()).zip(&window) {
+                                dst.re = *src * mul;
+                                dst.im = 0.0;
+                            }
+                            queue.drain(..hop);
+                            fft.process(&mut input, &mut output);
 
-                    node_ctx.lock().write(out_port.id(), &output[..output.len() / 2]).unwrap();
+                            {
+                                let lock_list = [out_port.clone()];
+                                let lock = node_ctx.lock(&[], &lock_list);
+                                lock.write(out_port.id(), &output[..output.len() / 2])?;
+                            }
+                        }
+                    Ok(())
+                };
+                if let Err(e) = res {
+                    println!("{:?}", e);
                 }
             }
         });
         remote_ctl
     }
 }
-
 type T = f32; // fix this because generic numbers are so annoying
+/*
 
 pub fn run_istft(ctx: NodeContext, size: usize, hop: usize) {
     let window: Vec<T> = apodize::hanning_iter(size).map(|x| x.sqrt() as T).collect();
@@ -116,7 +132,7 @@ pub fn run_istft(ctx: NodeContext, size: usize, hop: usize) {
                 ctx.node().in_ports().iter().zip(ctx.node().out_ports()).zip(queues.iter_mut())
             {
                 let lock = ctx.lock();
-                lock.wait(|lock| Ok(lock.available::<Complex<T>>(in_port.id())? >= size / 2));
+                lock.wait(|lock| Ok(lock.available::<Complex<T>>(in_port.id())? >= size / 2)).unwrap();
                 let frame = lock.read_n::<Complex<T>>(in_port.id(), size / 2).unwrap();
                 drop(lock);
                 queue.extend(vec![0.0; hop]);
@@ -143,7 +159,7 @@ pub fn run_stft_render(ctx: NodeContext, size: usize) {
         // TODO rewrite this so we can drop the lock during processing
         let lock = ctx.lock();
         let mut frame = lock.node().in_ports().into_iter().map(|port| {
-            lock.wait(|lock| Ok(lock.available::<Complex<T>>(port.id())? >= size));
+            lock.wait(|lock| Ok(lock.available::<Complex<T>>(port.id())? >= size)).unwrap();
             lock.read_n::<Complex<T>>(port.id(), size).unwrap()
         });
         let ch1 = frame.next().unwrap();
@@ -179,3 +195,4 @@ pub fn run_stft_render(ctx: NodeContext, size: usize) {
         lock.write(OutPortID(0), &out).unwrap();
     });
 }
+*/
