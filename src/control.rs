@@ -67,12 +67,7 @@ impl RemoteControl {
     pub fn send_message(&self, msg: message::Message) {
         self.msg_queue.lock().unwrap().push_back(msg);
         self.node.set_aborting(true);
-        for port in self.node.in_ports().iter() {
-            port.notify();
-        }
-        for port in self.node.out_ports().iter() {
-            port.notify();
-        }
+        self.node.notify();
     }
     pub fn recv_message(&self) -> Option<message::Message> {
         self.msg_queue.lock().unwrap().pop_front()

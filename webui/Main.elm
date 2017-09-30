@@ -72,7 +72,6 @@ type alias Node =
     { id : Int
     , name : String
     , ports : Ports
-    , status : NodeStatus
     , messageDescriptors : List MessageDescriptor
     }
 
@@ -100,12 +99,6 @@ type alias MessageArg =
     String
 
 
-type NodeStatus
-    = Stopped
-    | Running
-    | Paused
-
-
 type alias NodeType =
     { id : Int
     , name : String
@@ -129,10 +122,6 @@ type Msg
     | StartConnecting Node Port
     | DoConnect Node Port Node Port
     | Connected Decode.Value
-    | RunNode Node
-    | PauseNode Node
-    | RanNode Decode.Value
-    | PausedNode Decode.Value
     | DoDisconnect Node Port Edge
     | Disconnected Decode.Value
     | SendMessage Node Message
@@ -175,7 +164,6 @@ nodeView model node =
     li []
         [ div []
             [ b [] [ text node.name ]
-            , nodeStatusView model node
             , ul [] (List.map (messageDescriptorView model node) node.messageDescriptors)
             , text "Inputs:"
             , ol [] (List.map (portView model node) node.ports.input)
@@ -197,32 +185,6 @@ messageDescriptorView model node desc =
         )
 
 
-nodeStatusView : Model -> Node -> Html Msg
-nodeStatusView model node =
-    div []
-        ([ text ("(" ++ toString node.status ++ ") ") ]
-            ++ if fullyConnected node then
-                [ (let
-                    ( label, action ) =
-                        case node.status of
-                            Stopped ->
-                                ( "Run", RunNode node )
-
-                            Paused ->
-                                ( "Resume", RunNode node )
-
-                            Running ->
-                                ( "Pause", PauseNode node )
-                   in
-                    button [ onClick action ]
-                        [ text label ]
-                  )
-                ]
-               else
-                []
-        )
-
-
 portView : Model -> Node -> Port -> Html Msg
 portView model node port_ =
     -- what a fucking mess
@@ -240,12 +202,9 @@ portView model node port_ =
                                 (Maybe.map
                                     (\edge ->
                                         div []
-                                            ((edgeView model edge)
-                                                :: if node.status /= Running then
-                                                    [ button [ onClick (DoDisconnect node port_ edge) ] [ text "Disconnect this" ] ]
-                                                   else
-                                                    []
-                                            )
+                                            [ (edgeView model edge)
+                                            , button [ onClick (DoDisconnect node port_ edge) ] [ text "Disconnect this" ]
+                                            ]
                                     )
                                     port_.edge
                                 )
@@ -295,11 +254,10 @@ errorView model =
 decodeNodes : Decode.Decoder (List Node)
 decodeNodes =
     Decode.list
-        (Decode.map5 Node
+        (Decode.map4 Node
             (Decode.field "id" Decode.int)
             (Decode.field "name" Decode.string)
             (Decode.field "ports" decodePorts)
-            (Decode.field "status" decodeNodeStatus)
             (Decode.field "message_descriptors" (Decode.list decodeMessageDescriptor))
         )
 
@@ -353,26 +311,6 @@ decodeTypes =
 decodeAddNode : Decode.Decoder Int
 decodeAddNode =
     Decode.field "id" Decode.int
-
-
-decodeNodeStatus : Decode.Decoder NodeStatus
-decodeNodeStatus =
-    Decode.map
-        (\msg ->
-            case msg of
-                "stopped" ->
-                    Stopped
-
-                "running" ->
-                    Running
-
-                "paused" ->
-                    Paused
-
-                _ ->
-                    Stopped
-        )
-        Decode.string
 
 
 
@@ -507,30 +445,6 @@ decodeDisconnect =
 
 
 
--- CONTROL STATUS --
-
-
-runNode =
-    setNodeStatus "run"
-
-
-pauseNode =
-    setNodeStatus "pause"
-
-
-setNodeStatus : String -> Node -> Cmd Msg
-setNodeStatus status node =
-    httpGet
-        ("node/set_status/" ++ toString node.id ++ "/" ++ status)
-        decodeStatusUpdate
-        PausedNode
-
-
-decodeStatusUpdate =
-    Decode.value
-
-
-
 -- MESSAGES --
 
 
@@ -596,18 +510,6 @@ update msg model =
             ( { model | mode = Normal }, doConnect srcNode srcPort dstNode dstPort )
 
         Connected value ->
-            ( model, refreshNodes )
-
-        RunNode node ->
-            ( model, runNode node )
-
-        RanNode value ->
-            ( model, refreshNodes )
-
-        PauseNode node ->
-            ( model, pauseNode node )
-
-        PausedNode value ->
             ( model, refreshNodes )
 
         DoDisconnect node port_ edge ->

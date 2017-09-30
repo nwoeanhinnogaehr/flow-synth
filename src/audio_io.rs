@@ -66,7 +66,7 @@ impl NodeDescriptor for AudioIO {
                         Ok(())
                     };
                     if let Err(e) = res {
-                        println!("{:?}", e);
+                        println!("audio {:?}", e);
                     }
 
                     // do it forever
