@@ -1,6 +1,6 @@
 use rocket;
 use modular_flow::context::Context;
-use modular_flow::graph::{Port, InPortID, OutPortID, NodeID};
+use modular_flow::graph::{InPortID, NodeID, OutPortID, Port};
 use std::sync::Arc;
 use rocket_contrib::{Json, Value};
 use rocket::{Request, Response, State};

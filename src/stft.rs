@@ -66,32 +66,36 @@ impl NodeDescriptor for Stft {
                             node_ctx.node().pop_out_port();
                             queues.pop();
                         }
-                        _ => panic!()
+                        _ => panic!(),
                     }
                 }
                 node_ctx.lock_all().sleep(); // wait for next event
                 let res: Result<()> = do catch {
-                    for ((in_port, out_port), queue) in
-                        node_ctx.node().in_ports().iter().zip(node_ctx.node().out_ports()).zip(queues.iter_mut())
+                    for ((in_port, out_port), queue) in node_ctx
+                        .node()
+                        .in_ports()
+                        .iter()
+                        .zip(node_ctx.node().out_ports())
+                        .zip(queues.iter_mut())
+                    {
                         {
-                            {
-                                let lock = node_ctx.lock(&[in_port.clone()], &[]);
-                                lock.wait(|lock| Ok(lock.available::<T>(in_port.id())? >= hop))?;
-                                queue.extend(lock.read_n::<T>(in_port.id(), hop)?);
-                            }
-
-                            for ((dst, src), mul) in input.iter_mut().zip(queue.iter()).zip(&window) {
-                                dst.re = *src * mul;
-                                dst.im = 0.0;
-                            }
-                            queue.drain(..hop);
-                            fft.process(&mut input, &mut output);
-
-                            {
-                                let lock = node_ctx.lock(&[], &[out_port.clone()]);
-                                lock.write(out_port.id(), &output[..output.len() / 2])?;
-                            }
+                            let lock = node_ctx.lock(&[in_port.clone()], &[]);
+                            lock.wait(|lock| Ok(lock.available::<T>(in_port.id())? >= hop))?;
+                            queue.extend(lock.read_n::<T>(in_port.id(), hop)?);
                         }
+
+                        for ((dst, src), mul) in input.iter_mut().zip(queue.iter()).zip(&window) {
+                            dst.re = *src * mul;
+                            dst.im = 0.0;
+                        }
+                        queue.drain(..hop);
+                        fft.process(&mut input, &mut output);
+
+                        {
+                            let lock = node_ctx.lock(&[], &[out_port.clone()]);
+                            lock.write(out_port.id(), &output[..output.len() / 2])?;
+                        }
+                    }
                     Ok(())
                 };
                 if let Err(e) = res {
@@ -117,12 +121,12 @@ impl NodeDescriptor for IStft {
         let window: Vec<T> = apodize::hanning_iter(size).map(|x| x.sqrt() as T).collect();
         thread::spawn(move || {
             let mut queues = vec![
-            {
-                let mut q = VecDeque::<T>::new();
-                q.extend(vec![0.0; size - hop]);
-                q
-            };
-            node.in_ports().len()
+                {
+                    let mut q = VecDeque::<T>::new();
+                    q.extend(vec![0.0; size - hop]);
+                    q
+                };
+                node.in_ports().len()
             ];
             let mut output = vec![Complex::zero(); size];
 
@@ -133,22 +137,22 @@ impl NodeDescriptor for IStft {
                 let res: Result<()> = do catch {
                     for ((in_port, out_port), queue) in
                         node.in_ports().iter().zip(node.out_ports()).zip(queues.iter_mut())
-                        {
-                            let frame = {
-                                let lock = node_ctx.lock(&[in_port.clone()], &[]);
-                                lock.wait(|lock| Ok(lock.available::<Complex<T>>(in_port.id())? >= size / 2))?;
-                                lock.read_n::<Complex<T>>(in_port.id(), size / 2)?
-                            };
-                            queue.extend(vec![0.0; hop]);
-                            let mut input: Vec<_> =
-                                frame.iter().cloned().chain(iter::repeat(Complex::zero())).take(size).collect();
-                            fft.process(&mut input, &mut output);
-                            for ((src, dst), window) in output.iter().zip(queue.iter_mut()).zip(&window) {
-                                *dst += src.re * *window / size as T / (size / hop) as T * 2.0;
-                            }
-                            let samples = queue.drain(..hop).collect::<Vec<_>>();
-                            node_ctx.lock(&[], &[out_port.clone()]).write(out_port.id(), &samples)?;
+                    {
+                        let frame = {
+                            let lock = node_ctx.lock(&[in_port.clone()], &[]);
+                            lock.wait(|lock| Ok(lock.available::<Complex<T>>(in_port.id())? >= size / 2))?;
+                            lock.read_n::<Complex<T>>(in_port.id(), size / 2)?
+                        };
+                        queue.extend(vec![0.0; hop]);
+                        let mut input: Vec<_> =
+                            frame.iter().cloned().chain(iter::repeat(Complex::zero())).take(size).collect();
+                        fft.process(&mut input, &mut output);
+                        for ((src, dst), window) in output.iter().zip(queue.iter_mut()).zip(&window) {
+                            *dst += src.re * *window / size as T / (size / hop) as T * 2.0;
                         }
+                        let samples = queue.drain(..hop).collect::<Vec<_>>();
+                        node_ctx.lock(&[], &[out_port.clone()]).write(out_port.id(), &samples)?;
+                    }
                     Ok(())
                 };
                 if let Err(e) = res {
@@ -202,14 +206,14 @@ impl NodeDescriptor for SpectrogramRender {
 
                         // output colour
                         let grad = Gradient::new(vec![
-                                                 Hsv::new(RgbHue::from_radians(hue1), 1.0, value1),
-                                                 Hsv::new(RgbHue::from_radians(hue2), 1.0, value2),
+                            Hsv::new(RgbHue::from_radians(hue1), 1.0, value1),
+                            Hsv::new(RgbHue::from_radians(hue2), 1.0, value2),
                         ]);
                         let (r, g, b, _): (T, T, T, T) = Srgb::linear_to_pixel(grad.get(x % 1.0));
                         let (r, g, b) = (r * 255.0, g * 255.0, b * 255.0);
                         (r as u32) << 24 | (g as u32) << 16 | (b as u32) << 8 | 0xFF
                     })
-                .collect();
+                    .collect();
                 prev_frame = frame;
                 {
                     let lock = node_ctx.lock(&[], &[node.out_port(OutPortID(0))?]);

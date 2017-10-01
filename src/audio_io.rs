@@ -52,11 +52,9 @@ impl NodeDescriptor for AudioIO {
                             lock.write(out_port.id(), &input)?;
                         }
                         // to avoid xruns, don't block, just skip instead.
-                        if lock.node()
-                            .in_ports()
-                            .iter()
-                            .all(|in_port| lock.available::<f32>(in_port.id()).unwrap_or(0) >= client.buffer_size() as usize)
-                        {
+                        if lock.node().in_ports().iter().all(|in_port| {
+                            lock.available::<f32>(in_port.id()).unwrap_or(0) >= client.buffer_size() as usize
+                        }) {
                             for (output, in_port) in output_ports.iter_mut().zip(lock.node().in_ports()) {
                                 let read = lock.read_n(in_port.id(), client.buffer_size() as usize)?;
                                 output.copy_from_slice(&read);

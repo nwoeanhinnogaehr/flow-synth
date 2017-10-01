@@ -1,6 +1,6 @@
 use modular_flow::graph::*;
 use modular_flow::context::*;
-use control::{RemoteControl, NodeDescriptor};
+use control::{NodeDescriptor, RemoteControl};
 use sdl2;
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::rect::Rect;
@@ -49,16 +49,16 @@ impl NodeDescriptor for PixelScroller {
                 for event in event_pump.poll_iter() {
                     match event {
                         Event::Quit { .. } |
-                            Event::KeyDown {
-                                keycode: Some(Keycode::Escape),
-                                ..
-                            } => break 'mainloop,
-                            Event::Window {
-                                win_event: WindowEvent::Resized(_, _),
-                                ..
-                            } => {
-                                // TODO
-                            }
+                        Event::KeyDown {
+                            keycode: Some(Keycode::Escape),
+                            ..
+                        } => break 'mainloop,
+                        Event::Window {
+                            win_event: WindowEvent::Resized(_, _),
+                            ..
+                        } => {
+                            // TODO
+                        }
                         _ => {}
                     }
                 }
@@ -79,14 +79,14 @@ impl NodeDescriptor for PixelScroller {
                                 Rect::new(0, scroll_pos, width as u32, 1),
                                 unsafe { mem::transmute(&frame[..]) },
                                 width * 4,
-                                )
+                            )
                             .unwrap();
                         texture
                             .update(
                                 Rect::new(0, scroll_pos + height as i32 / 2, width as u32, 1),
                                 unsafe { mem::transmute(&frame[..]) },
                                 width * 4,
-                                )
+                            )
                             .unwrap();
                         time += 1;
                     }
