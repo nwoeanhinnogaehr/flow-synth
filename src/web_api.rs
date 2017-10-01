@@ -14,9 +14,10 @@ use rocket_cors;
 use control::*;
 use self::message;
 
-struct StaticNode {
-    name: &'static str,
-    make: fn(Arc<Context>) -> Arc<RemoteControl>,
+#[derive(Debug)]
+pub struct StaticNode {
+    pub name: &'static str,
+    pub make: fn(Arc<Context>) -> Arc<RemoteControl>,
 }
 
 const TYPES: &'static [StaticNode] = &[
@@ -94,8 +95,8 @@ fn node_list(this: State<WebApi>) -> JsonResult {
                         .map(|edge| {
                             json!({
                                 "edge": {
-                                    "node": edge.node.0,
-                                    "port": edge.port.0,
+                                    "node": edge.node.id().0,
+                                    "port": edge.port.id().0,
                                 },
                                 "id": idx,
                                 "name": port.name(),
@@ -115,8 +116,8 @@ fn node_list(this: State<WebApi>) -> JsonResult {
                         .map(|edge| {
                             json!({
                                 "edge": {
-                                    "node": edge.node.0,
-                                    "port": edge.port.0,
+                                    "node": edge.node.id().0,
+                                    "port": edge.port.id().0,
                                 },
                                 "id": idx,
                                 "name": port.name(),
@@ -202,7 +203,9 @@ fn connect_port(
 
 #[get("/node/disconnect/<node_id>/<port_id>")]
 fn disconnect_port(this: State<WebApi>, node_id: usize, port_id: usize) -> JsonResult {
-    match this.ctx.graph().disconnect(NodeID(node_id), InPortID(port_id)) {
+    let node = this.ctx.graph().node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("invalid node id"))))?;
+    let port = node.in_port(InPortID(port_id)).map_err(|_| JsonErr(Json(json!("invalid port id"))))?;
+    match port.disconnect() {
         Err(_) => resp_err(json!("cannot disconnect: already connected")),
         Ok(_) => resp_ok(json!({})),
     }

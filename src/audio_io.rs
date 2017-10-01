@@ -4,7 +4,6 @@ use jack::prelude::*;
 use std::thread;
 use super::control::{NodeDescriptor, RemoteControl};
 use std::sync::Arc;
-use std::boxed::FnBox;
 
 pub struct AudioIO {}
 
