@@ -29,6 +29,10 @@ const TYPES: &'static [StaticNode] = &[
         make: stft::Stft::new,
     },
     StaticNode {
+        name: stft::IStft::NAME,
+        make: stft::IStft::new,
+    },
+    StaticNode {
         name: stft::SpectrogramRender::NAME,
         make: stft::SpectrogramRender::new,
     },

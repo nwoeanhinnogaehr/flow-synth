@@ -1,4 +1,5 @@
 use modular_flow::graph::*;
+
 use modular_flow::context::*;
 use std::thread;
 use rustfft::FFTplanner;
@@ -9,6 +10,8 @@ use apodize;
 use std::iter;
 use super::control::*;
 use std::sync::Arc;
+
+type T = f32; // fix this because generic numbers are so annoying
 
 pub struct Stft {}
 
@@ -101,47 +104,63 @@ impl NodeDescriptor for Stft {
         remote_ctl
     }
 }
-type T = f32; // fix this because generic numbers are so annoying
-/*
 
-pub fn run_istft(ctx: NodeContext, size: usize, hop: usize) {
-    let window: Vec<T> = apodize::hanning_iter(size).map(|x| x.sqrt() as T).collect();
-    thread::spawn(move || {
-        let mut queues = vec![
+pub struct IStft {}
+
+impl NodeDescriptor for IStft {
+    const NAME: &'static str = "ISTFT";
+    fn new(ctx: Arc<Context>) -> Arc<RemoteControl> {
+        let id = ctx.graph().add_node(2, 2);
+        let node_ctx = ctx.node_ctx(id).unwrap();
+        let node = ctx.graph().node(id).unwrap();
+        let remote_ctl = Arc::new(RemoteControl::new(ctx, node.clone(), vec![]));
+        let size = 2048;
+        let hop = 256;
+        let window: Vec<T> = apodize::hanning_iter(size).map(|x| x.sqrt() as T).collect();
+        thread::spawn(move || {
+            let mut queues = vec![
             {
                 let mut q = VecDeque::<T>::new();
                 q.extend(vec![0.0; size - hop]);
                 q
             };
-            ctx.node().in_ports().len()
-        ];
-        let mut output = vec![Complex::zero(); size];
+            node.in_ports().len()
+            ];
+            let mut output = vec![Complex::zero(); size];
 
-        let mut planner = FFTplanner::new(true);
-        let fft = planner.plan_fft(size);
+            let mut planner = FFTplanner::new(true);
+            let fft = planner.plan_fft(size);
 
-        loop {
-            for ((in_port, out_port), queue) in
-                ctx.node().in_ports().iter().zip(ctx.node().out_ports()).zip(queues.iter_mut())
-            {
-                let lock = ctx.lock();
-                lock.wait(|lock| Ok(lock.available::<Complex<T>>(in_port.id())? >= size / 2)).unwrap();
-                let frame = lock.read_n::<Complex<T>>(in_port.id(), size / 2).unwrap();
-                drop(lock);
-                queue.extend(vec![0.0; hop]);
-                let mut input: Vec<_> =
-                    frame.iter().cloned().chain(iter::repeat(Complex::zero())).take(size).collect();
-                fft.process(&mut input, &mut output);
-                for ((src, dst), window) in output.iter().zip(queue.iter_mut()).zip(&window) {
-                    *dst += src.re * *window / size as T / (size / hop) as T * 2.0;
+            loop {
+                let res: Result<()> = do catch {
+                    for ((in_port, out_port), queue) in
+                        node.in_ports().iter().zip(node.out_ports()).zip(queues.iter_mut())
+                        {
+                            let frame = {
+                                let lock = node_ctx.lock(&[in_port.clone()], &[]);
+                                lock.wait(|lock| Ok(lock.available::<Complex<T>>(in_port.id())? >= size / 2))?;
+                                lock.read_n::<Complex<T>>(in_port.id(), size / 2)?
+                            };
+                            queue.extend(vec![0.0; hop]);
+                            let mut input: Vec<_> =
+                                frame.iter().cloned().chain(iter::repeat(Complex::zero())).take(size).collect();
+                            fft.process(&mut input, &mut output);
+                            for ((src, dst), window) in output.iter().zip(queue.iter_mut()).zip(&window) {
+                                *dst += src.re * *window / size as T / (size / hop) as T * 2.0;
+                            }
+                            let samples = queue.drain(..hop).collect::<Vec<_>>();
+                            node_ctx.lock(&[], &[out_port.clone()]).write(out_port.id(), &samples)?;
+                        }
+                    Ok(())
+                };
+                if let Err(e) = res {
+                    println!("istft {:?}", e);
                 }
-                let samples = queue.drain(..hop).collect::<Vec<_>>();
-                ctx.lock().write(out_port.id(), &samples).unwrap();
             }
-        }
-    });
+        });
+        remote_ctl
+    }
 }
-*/
 
 pub struct SpectrogramRender {}
 
