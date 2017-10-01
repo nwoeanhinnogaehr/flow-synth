@@ -18,7 +18,7 @@ extern crate sdl2;
 mod audio_io;
 //mod basics;
 mod stft;
-//mod pixel_scroller;
+mod pixel_scroller;
 mod web_api;
 mod control;
 

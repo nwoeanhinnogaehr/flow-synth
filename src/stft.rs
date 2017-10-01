@@ -141,51 +141,70 @@ pub fn run_istft(ctx: NodeContext, size: usize, hop: usize) {
         }
     });
 }
-
-pub fn run_stft_render(ctx: NodeContext, size: usize) {
-    use palette::*;
-    use palette::pixel::*;
-
-    let mut max = 1.0;
-    let mut prev_frame = vec![Complex::<T>::zero(); size];
-    thread::spawn(move || loop {
-        // TODO rewrite this so we can drop the lock during processing
-        let lock = ctx.lock();
-        let mut frame = lock.node().in_ports().into_iter().map(|port| {
-            lock.wait(|lock| Ok(lock.available::<Complex<T>>(port.id())? >= size)).unwrap();
-            lock.read_n::<Complex<T>>(port.id(), size).unwrap()
-        });
-        let ch1 = frame.next().unwrap();
-        let frame = frame.fold(ch1, |a, x| a.iter().zip(x.iter()).map(|(l, r)| l + r).collect());
-        let out: Vec<_> = (0..size)
-            .map(|idx| {
-                let x = (idx as T / size as T * (size as T).log2()).exp2();
-                let x_i = x as usize;
-
-                // compute hue
-                let hue1 = frame[x_i].arg() - prev_frame[x_i].arg();
-                let hue2 = frame[(x_i + 1) % size].arg() - prev_frame[(x_i + 1) % size].arg();
-
-                // compute intensity
-                let norm1 = frame[x_i].norm();
-                let norm2 = frame[(x_i + 1) % size].norm();
-                max = T::max(norm1, max);
-                max = T::max(norm2, max);
-                let value1 = norm1 / max;
-                let value2 = norm2 / max;
-
-                // output colour
-                let grad = Gradient::new(vec![
-                    Hsv::new(RgbHue::from_radians(hue1), 1.0, value1),
-                    Hsv::new(RgbHue::from_radians(hue2), 1.0, value2),
-                ]);
-                let (r, g, b, _): (T, T, T, T) = Srgb::linear_to_pixel(grad.get(x % 1.0));
-                let (r, g, b) = (r * 255.0, g * 255.0, b * 255.0);
-                (r as u32) << 24 | (g as u32) << 16 | (b as u32) << 8 | 0xFF
-            })
-            .collect();
-        prev_frame = frame;
-        lock.write(OutPortID(0), &out).unwrap();
-    });
-}
 */
+
+pub struct SpectrogramRender {}
+
+impl NodeDescriptor for SpectrogramRender {
+    const NAME: &'static str = "Spectrogram Render";
+    fn new(ctx: Arc<Context>) -> Arc<RemoteControl> {
+        let id = ctx.graph().add_node(1, 1);
+        let node_ctx = ctx.node_ctx(id).unwrap();
+        let node = ctx.graph().node(id).unwrap();
+        let remote_ctl = Arc::new(RemoteControl::new(ctx, node, vec![]));
+        let size = 1024;
+        use palette::*;
+        use palette::pixel::*;
+
+        let mut max = 1.0;
+        let mut prev_frame = vec![Complex::<T>::zero(); size];
+        thread::spawn(move || loop {
+            let res: Result<()> = do catch {
+                // TODO rewrite this so we can drop the lock during processing
+                let frame = {
+                    let lock = node_ctx.lock_all();
+                    lock.sleep();
+                    lock.wait(|lock| Ok(lock.available::<Complex<T>>(InPortID(0))? >= size))?;
+                    lock.read_n::<Complex<T>>(InPortID(0), size)?
+                };
+                let out: Vec<_> = (0..size)
+                    .map(|idx| {
+                        let x = (idx as T / size as T * (size as T).log2()).exp2();
+                        let x_i = x as usize;
+
+                        // compute hue
+                        let hue1 = frame[x_i].arg() - prev_frame[x_i].arg();
+                        let hue2 = frame[(x_i + 1) % size].arg() - prev_frame[(x_i + 1) % size].arg();
+
+                        // compute intensity
+                        let norm1 = frame[x_i].norm();
+                        let norm2 = frame[(x_i + 1) % size].norm();
+                        max = T::max(norm1, max);
+                        max = T::max(norm2, max);
+                        let value1 = norm1 / max;
+                        let value2 = norm2 / max;
+
+                        // output colour
+                        let grad = Gradient::new(vec![
+                                                 Hsv::new(RgbHue::from_radians(hue1), 1.0, value1),
+                                                 Hsv::new(RgbHue::from_radians(hue2), 1.0, value2),
+                        ]);
+                        let (r, g, b, _): (T, T, T, T) = Srgb::linear_to_pixel(grad.get(x % 1.0));
+                        let (r, g, b) = (r * 255.0, g * 255.0, b * 255.0);
+                        (r as u32) << 24 | (g as u32) << 16 | (b as u32) << 8 | 0xFF
+                    })
+                .collect();
+                prev_frame = frame;
+                {
+                    let lock = node_ctx.lock_all();
+                    lock.write(OutPortID(0), &out)?;
+                }
+                Ok(())
+            };
+            if let Err(e) = res {
+                println!("render {:?}", e);
+            }
+        });
+        remote_ctl
+    }
+}

@@ -8,6 +8,7 @@ use rocket::http::Status;
 use rocket::response::Responder;
 use audio_io;
 use stft;
+use pixel_scroller;
 use std::sync::RwLock;
 use rocket_cors;
 use control::*;
@@ -26,6 +27,14 @@ const TYPES: &'static [StaticNode] = &[
     StaticNode {
         name: stft::Stft::NAME,
         make: stft::Stft::new,
+    },
+    StaticNode {
+        name: stft::SpectrogramRender::NAME,
+        make: stft::SpectrogramRender::new,
+    },
+    StaticNode {
+        name: pixel_scroller::PixelScroller::NAME,
+        make: pixel_scroller::PixelScroller::new,
     },
 ];
 
