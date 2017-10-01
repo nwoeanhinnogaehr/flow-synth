@@ -66,7 +66,7 @@ impl NodeDescriptor for PixelScroller {
                 let mut scroll_pos = 0;
 
                 let lock = node_ctx.lock_all();
-                lock.wait(|lock| Ok(lock.available::<u32>(InPortID(0))? >= width));
+                let _ = lock.wait(|lock| Ok(lock.available::<u32>(InPortID(0))? >= width));
                 let available_pixels = lock.available::<u32>(InPortID(0)).unwrap_or(0);
                 if available_pixels >= width {
                     let frames = lock.read_n::<u32>(InPortID(0), available_pixels / width * width).unwrap();

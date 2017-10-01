@@ -170,7 +170,7 @@ impl NodeDescriptor for SpectrogramRender {
         let id = ctx.graph().add_node(1, 1);
         let node_ctx = ctx.node_ctx(id).unwrap();
         let node = ctx.graph().node(id).unwrap();
-        let remote_ctl = Arc::new(RemoteControl::new(ctx, node, vec![]));
+        let remote_ctl = Arc::new(RemoteControl::new(ctx, node.clone(), vec![]));
         let size = 1024;
         use palette::*;
         use palette::pixel::*;
@@ -179,9 +179,8 @@ impl NodeDescriptor for SpectrogramRender {
         let mut prev_frame = vec![Complex::<T>::zero(); size];
         thread::spawn(move || loop {
             let res: Result<()> = do catch {
-                // TODO rewrite this so we can drop the lock during processing
                 let frame = {
-                    let lock = node_ctx.lock_all();
+                    let lock = node_ctx.lock(&[node.in_port(InPortID(0))?], &[]);
                     lock.sleep();
                     lock.wait(|lock| Ok(lock.available::<Complex<T>>(InPortID(0))? >= size))?;
                     lock.read_n::<Complex<T>>(InPortID(0), size)?
@@ -215,7 +214,7 @@ impl NodeDescriptor for SpectrogramRender {
                 .collect();
                 prev_frame = frame;
                 {
-                    let lock = node_ctx.lock_all();
+                    let lock = node_ctx.lock(&[], &[node.out_port(OutPortID(0))?]);
                     lock.write(OutPortID(0), &out)?;
                 }
                 Ok(())
