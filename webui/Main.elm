@@ -126,6 +126,8 @@ type Msg
     | Disconnected Decode.Value
     | SendMessage Node Message
     | SentMessage Decode.Value
+    | KillNode Node
+    | KilledNode Decode.Value
 
 
 emptyGraph =
@@ -163,7 +165,8 @@ nodeView : Model -> Node -> Html Msg
 nodeView model node =
     li []
         [ div []
-            [ b [] [ text node.name ]
+            [ button [ onClick (KillNode node) ] [ text "Kill" ]
+            , b [] [ text node.name ]
             , ul [] (List.map (messageDescriptorView model node) node.messageDescriptors)
             , text "Inputs:"
             , ol [] (List.map (portView model node) node.ports.input)
@@ -456,6 +459,13 @@ sendMessage node msg =
         SentMessage
 
 
+killNode node =
+    httpGet
+        ("/node/kill/" ++ toString node.id)
+        Decode.value
+        KilledNode
+
+
 
 -- ERROR --
 
@@ -522,6 +532,12 @@ update msg model =
             ( model, sendMessage node message )
 
         SentMessage value ->
+            ( model, refreshNodes )
+
+        KillNode node ->
+            ( model, killNode node )
+
+        KilledNode value ->
             ( model, refreshNodes )
 
 

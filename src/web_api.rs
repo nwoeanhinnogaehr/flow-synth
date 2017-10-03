@@ -13,12 +13,7 @@ use std::sync::RwLock;
 use rocket_cors;
 use control::*;
 use self::message;
-
-#[derive(Debug)]
-pub struct StaticNode {
-    pub name: &'static str,
-    pub make: fn(Arc<Context>) -> Arc<RemoteControl>,
-}
+use std::thread;
 
 const TYPES: &'static [StaticNode] = &[
     StaticNode {
@@ -50,7 +45,7 @@ struct ActiveNode {
 
 struct WebApi {
     ctx: Arc<Context>,
-    nodes: RwLock<Vec<ActiveNode>>,
+    nodes: RwLock<Vec<Arc<ActiveNode>>>,
 }
 
 impl WebApi {
@@ -59,6 +54,17 @@ impl WebApi {
             ctx,
             nodes: RwLock::new(Vec::new()),
         }
+    }
+
+    fn node(&self, id: NodeID) -> Result<Arc<ActiveNode>, JsonErr> {
+        let nodes = self.nodes.read().unwrap();
+        nodes.iter().cloned().find(|node| node.ctl.node().id() == id).ok_or(JsonErr(Json(json!("invalid node"))))
+    }
+
+    fn remove_node(&self, id: NodeID) -> Result<Arc<ActiveNode>, JsonErr> {
+        let mut nodes = self.nodes.write().unwrap();
+        let idx = nodes.iter().cloned().position(|node| node.ctl.node().id() == id).ok_or(JsonErr(Json(json!("invalid node"))))?;
+        Ok(nodes.swap_remove(idx))
     }
 }
 
@@ -82,8 +88,7 @@ fn node_list(this: State<WebApi>) -> JsonResult {
     let nodes = this.nodes.read().unwrap();
     let nodes: Vec<_> = nodes
         .iter()
-        .enumerate()
-        .map(|(idx, node)| {
+        .map(|node| {
             // TODO better abstraction
             let in_ports: Vec<_> = node.ctl
                 .node()
@@ -144,7 +149,7 @@ fn node_list(this: State<WebApi>) -> JsonResult {
                 })
                 .collect();
             json!({
-                "id": idx,
+                "id": node.ctl.node().id().0,
                 "name": node.static_node.name,
                 "ports": {
                     "in": in_ports,
@@ -173,10 +178,10 @@ fn node_create(this: State<WebApi>, type_id: usize) -> JsonResult {
     }
     let ctl = (TYPES[type_id].make)(this.ctx.clone());
     let id = ctl.node().id().0;
-    this.nodes.write().unwrap().push(ActiveNode {
+    this.nodes.write().unwrap().push(Arc::new(ActiveNode {
         ctl,
         static_node: &TYPES[type_id],
-    });
+    }));
     resp_ok(json!({
         "id": id,
     }))
@@ -210,15 +215,18 @@ fn disconnect_port(this: State<WebApi>, node_id: usize, port_id: usize) -> JsonR
         Ok(_) => resp_ok(json!({})),
     }
 }
-// TODO this should probably just change into a thing to stop and delete nodes
-#[get("/node/set_status/<node_id>/<status>")]
-fn set_node_status(this: State<WebApi>, node_id: usize, status: String) -> JsonResult {
-    let mut nodes = this.nodes.write().unwrap();
-    if node_id >= nodes.len() {
-        return resp_err(json!("node id out of bounds"));
+#[get("/node/kill/<node_id>")]
+fn set_node_status(this: State<WebApi>, node_id: usize) -> JsonResult {
+    let node = this.node(NodeID(node_id))?;
+    node.ctl.stop();
+    node.ctl.node().subscribe();
+    while node.ctl.node().attached() {
+        thread::park(); // TODO: relying on implementation detail
     }
-    let node = &mut nodes[node_id];
-    resp_err(json!("unimplemented"))
+    node.ctl.node().unsubscribe();
+    this.ctx.graph().remove_node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("couldn't remove node from graph"))))?;
+    this.remove_node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("couldn't remove node from active node list"))))?;
+    resp_ok(json!({}))
 }
 
 #[post("/node/send_message/<node_id>/<message_id>", format = "application/json", data = "<args>")]
@@ -229,11 +237,7 @@ fn send_message(
     args: Json<Vec<String>>,
 ) -> JsonResult {
     use self::message::*;
-    let mut nodes = this.nodes.write().unwrap();
-    if node_id >= nodes.len() {
-        return resp_err(json!("node id out of bounds"));
-    }
-    let node = &mut nodes[node_id];
+    let node = this.node(NodeID(node_id))?;
     let message_descriptor = &node.ctl.message_descriptors()[message_id];
     let args = args.0;
     if args.iter().count() != message_descriptor.args.len() {

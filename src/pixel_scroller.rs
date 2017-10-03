@@ -7,11 +7,10 @@ use sdl2::rect::Rect;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Keycode;
 use std::thread;
-use std::process;
 use std::mem;
 use std::sync::Arc;
 
-pub struct PixelScroller;
+pub struct PixelScroller {}
 
 impl NodeDescriptor for PixelScroller {
     const NAME: &'static str = "Pixel Scroller";
@@ -20,9 +19,10 @@ impl NodeDescriptor for PixelScroller {
         let node_ctx = ctx.node_ctx(id).unwrap();
         let node = ctx.graph().node(id).unwrap();
         let remote_ctl = Arc::new(RemoteControl::new(ctx, node, vec![]));
-        let width = 1024;
+        let width = 2048;
         let height = 1024;
 
+        let ctl = remote_ctl.clone();
         thread::spawn(move || {
             let sdl_context = sdl2::init().unwrap();
             let video_subsystem = sdl_context.video().unwrap();
@@ -45,7 +45,7 @@ impl NodeDescriptor for PixelScroller {
 
             let mut time = 0;
 
-            'mainloop: loop {
+            'mainloop: while !ctl.stopped() {
                 for event in event_pump.poll_iter() {
                     match event {
                         Event::Quit { .. } |
@@ -96,8 +96,6 @@ impl NodeDescriptor for PixelScroller {
                     canvas.present();
                 }
             }
-
-            process::exit(0);
         });
         remote_ctl
     }

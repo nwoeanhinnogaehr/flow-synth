@@ -49,15 +49,17 @@ impl NodeDescriptor for AudioIO {
                         // shuffle data
                         let lock = node_ctx.lock(&node_ctx.node().in_ports(), &node_ctx.node().out_ports());
                         for (input, out_port) in input_ports.into_iter().zip(lock.node().out_ports()) {
-                            lock.write(out_port.id(), &input)?;
+                            // discard errors, drop the frame
+                            let _ = lock.write(out_port.id(), &input);
                         }
                         // to avoid xruns, don't block, just skip instead.
                         if lock.node().in_ports().iter().all(|in_port| {
                             lock.available::<f32>(in_port.id()).unwrap_or(0) >= client.buffer_size() as usize
                         }) {
                             for (output, in_port) in output_ports.iter_mut().zip(lock.node().in_ports()) {
-                                let read = lock.read_n(in_port.id(), client.buffer_size() as usize)?;
-                                output.copy_from_slice(&read);
+                                // discard errors, drop the frame
+                                let _ = lock.read_n(in_port.id(), client.buffer_size() as usize)
+                                    .map(|read| output.copy_from_slice(&read));
                             }
                         }
                         Ok(())

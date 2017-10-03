@@ -23,7 +23,7 @@ impl NodeDescriptor for Stft {
         let node = ctx.graph().node(id).unwrap();
 
         // TODO add ports for params
-        let size = 2048;
+        let size = 4096;
         let hop = 256;
 
         let remote_ctl = Arc::new(RemoteControl::new(
@@ -53,7 +53,7 @@ impl NodeDescriptor for Stft {
             let mut planner = FFTplanner::new(false);
             let fft = planner.plan_fft(size);
 
-            loop {
+            while !ctl.stopped() {
                 while let Some(msg) = ctl.recv_message() {
                     match msg.desc.name {
                         "Add port" => {
@@ -116,9 +116,10 @@ impl NodeDescriptor for IStft {
         let node_ctx = ctx.node_ctx(id).unwrap();
         let node = ctx.graph().node(id).unwrap();
         let remote_ctl = Arc::new(RemoteControl::new(ctx, node.clone(), vec![]));
-        let size = 2048;
+        let size = 4096;
         let hop = 256;
         let window: Vec<T> = apodize::hanning_iter(size).map(|x| x.sqrt() as T).collect();
+        let ctl = remote_ctl.clone();
         thread::spawn(move || {
             let mut queues = vec![
                 {
@@ -133,7 +134,7 @@ impl NodeDescriptor for IStft {
             let mut planner = FFTplanner::new(true);
             let fft = planner.plan_fft(size);
 
-            loop {
+            while !ctl.stopped() {
                 let res: Result<()> = do catch {
                     for ((in_port, out_port), queue) in
                         node.in_ports().iter().zip(node.out_ports()).zip(queues.iter_mut())
@@ -173,13 +174,14 @@ impl NodeDescriptor for SpectrogramRender {
         let node_ctx = ctx.node_ctx(id).unwrap();
         let node = ctx.graph().node(id).unwrap();
         let remote_ctl = Arc::new(RemoteControl::new(ctx, node.clone(), vec![]));
-        let size = 1024;
+        let size = 2048;
         use palette::*;
         use palette::pixel::*;
 
         let mut max = 1.0;
         let mut prev_frame = vec![Complex::<T>::zero(); size];
-        thread::spawn(move || loop {
+        let ctl = remote_ctl.clone();
+        thread::spawn(move || while !ctl.stopped() {
             let res: Result<()> = do catch {
                 let frame = {
                     let lock = node_ctx.lock(&[node.in_port(InPortID(0))?], &[]);
