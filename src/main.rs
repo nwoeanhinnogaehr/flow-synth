@@ -14,6 +14,7 @@ extern crate rocket_contrib;
 extern crate rocket_cors;
 extern crate rustfft;
 extern crate sdl2;
+extern crate ws;
 
 mod audio_io;
 //mod basics;

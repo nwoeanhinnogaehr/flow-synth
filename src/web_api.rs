@@ -1,3 +1,5 @@
+// TODO: restructure this file
+
 use rocket;
 use modular_flow::context::Context;
 use modular_flow::graph::{InPortID, NodeID, OutPortID, Port};
@@ -14,6 +16,8 @@ use rocket_cors;
 use control::*;
 use self::message;
 use std::thread;
+use ws::listen;
+use std::time::Duration;
 
 const TYPES: &'static [StaticNode] = &[
     StaticNode {
@@ -66,6 +70,86 @@ impl WebApi {
         let idx = nodes.iter().cloned().position(|node| node.ctl.node().id() == id).ok_or(JsonErr(Json(json!("invalid node"))))?;
         Ok(nodes.swap_remove(idx))
     }
+
+    fn nodes_json(&self) -> JsonResult {
+        let nodes = self.nodes.read().unwrap();
+        let nodes: Vec<_> = nodes
+            .iter()
+            .map(|node| {
+                // TODO better abstraction
+                let in_ports: Vec<_> = node.ctl
+                    .node()
+                    .in_ports()
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, port)| {
+                        port.edge()
+                            .map(|edge| {
+                                json!({
+                                    "edge": {
+                                        "node": edge.node.id().0,
+                                        "port": edge.port.id().0,
+                                    },
+                                    "id": idx,
+                                    "name": port.name(),
+
+                                })
+                            })
+                        .unwrap_or(json!({"id": idx, "name": port.name() }))
+                    })
+                .collect();
+                let out_ports: Vec<_> = node.ctl
+                    .node()
+                    .out_ports()
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, port)| {
+                        port.edge()
+                            .map(|edge| {
+                                json!({
+                                    "edge": {
+                                        "node": edge.node.id().0,
+                                        "port": edge.port.id().0,
+                                    },
+                                    "id": idx,
+                                    "name": port.name(),
+
+                                })
+                            })
+                        .unwrap_or(json!({"id": idx, "name": port.name() }))
+                    })
+                .collect();
+                let message_descriptors: Vec<_> = node.ctl
+                    .message_descriptors()
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, msg)| {
+                        json!({
+                            "id": idx,
+                            "name": msg.name,
+                            "args": msg.args.iter().map(|arg|
+                                                        json!({
+                                                            "name": arg.name,
+                                                            "type": format!("{:?}", arg.ty),
+                                                        })).collect::<Vec<_>>(),
+                        })
+                    })
+                .collect();
+                json!({
+                    "id": node.ctl.node().id().0,
+                    "name": node.static_node.name,
+                    "ports": {
+                        "in": in_ports,
+                        "out": out_ports,
+                    },
+                    "status": status_string(node),
+                    "message_descriptors": message_descriptors,
+                })
+            })
+        .collect();
+        resp_ok(json!(nodes))
+    }
+
 }
 
 #[get("/type")]
@@ -84,83 +168,8 @@ fn type_list() -> JsonResult {
 }
 
 #[get("/node")]
-fn node_list(this: State<WebApi>) -> JsonResult {
-    let nodes = this.nodes.read().unwrap();
-    let nodes: Vec<_> = nodes
-        .iter()
-        .map(|node| {
-            // TODO better abstraction
-            let in_ports: Vec<_> = node.ctl
-                .node()
-                .in_ports()
-                .iter()
-                .enumerate()
-                .map(|(idx, port)| {
-                    port.edge()
-                        .map(|edge| {
-                            json!({
-                                "edge": {
-                                    "node": edge.node.id().0,
-                                    "port": edge.port.id().0,
-                                },
-                                "id": idx,
-                                "name": port.name(),
-
-                            })
-                        })
-                        .unwrap_or(json!({"id": idx, "name": port.name() }))
-                })
-                .collect();
-            let out_ports: Vec<_> = node.ctl
-                .node()
-                .out_ports()
-                .iter()
-                .enumerate()
-                .map(|(idx, port)| {
-                    port.edge()
-                        .map(|edge| {
-                            json!({
-                                "edge": {
-                                    "node": edge.node.id().0,
-                                    "port": edge.port.id().0,
-                                },
-                                "id": idx,
-                                "name": port.name(),
-
-                            })
-                        })
-                        .unwrap_or(json!({"id": idx, "name": port.name() }))
-                })
-                .collect();
-            let message_descriptors: Vec<_> = node.ctl
-                .message_descriptors()
-                .iter()
-                .enumerate()
-                .map(|(idx, msg)| {
-                    json!({
-                        "id": idx,
-                        "name": msg.name,
-                        "args": msg.args.iter().map(|arg|
-                            json!({
-                                "name": arg.name,
-                                "type": format!("{:?}", arg.ty),
-                            })).collect::<Vec<_>>(),
-                    })
-                })
-                .collect();
-            json!({
-                "id": node.ctl.node().id().0,
-                "name": node.static_node.name,
-                "ports": {
-                    "in": in_ports,
-                    "out": out_ports,
-                },
-                "status": status_string(node),
-                "message_descriptors": message_descriptors,
-            })
-        })
-        .collect();
-    resp_ok(json!(nodes))
+fn node_list(this: State<Arc<WebApi>>) -> JsonResult {
+    this.nodes_json()
 }
 
 fn status_string(node: &ActiveNode) -> &'static str {
@@ -172,7 +181,7 @@ fn status_string(node: &ActiveNode) -> &'static str {
 }
 
 #[get("/type/<type_id>/new")]
-fn node_create(this: State<WebApi>, type_id: usize) -> JsonResult {
+fn node_create(this: State<Arc<WebApi>>, type_id: usize) -> JsonResult {
     if type_id >= TYPES.len() {
         return resp_err(json!("id out of bounds"));
     }
@@ -189,7 +198,7 @@ fn node_create(this: State<WebApi>, type_id: usize) -> JsonResult {
 
 #[get("/node/connect/<src_node_id>/<src_port_id>/to/<dst_node_id>/<dst_port_id>")]
 fn connect_port(
-    this: State<WebApi>,
+    this: State<Arc<WebApi>>,
     src_node_id: usize,
     src_port_id: usize,
     dst_node_id: usize,
@@ -207,7 +216,7 @@ fn connect_port(
 }
 
 #[get("/node/disconnect/<node_id>/<port_id>")]
-fn disconnect_port(this: State<WebApi>, node_id: usize, port_id: usize) -> JsonResult {
+fn disconnect_port(this: State<Arc<WebApi>>, node_id: usize, port_id: usize) -> JsonResult {
     let node = this.ctx.graph().node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("invalid node id"))))?;
     let port = node.in_port(InPortID(port_id)).map_err(|_| JsonErr(Json(json!("invalid port id"))))?;
     match port.disconnect() {
@@ -216,7 +225,7 @@ fn disconnect_port(this: State<WebApi>, node_id: usize, port_id: usize) -> JsonR
     }
 }
 #[get("/node/kill/<node_id>")]
-fn set_node_status(this: State<WebApi>, node_id: usize) -> JsonResult {
+fn set_node_status(this: State<Arc<WebApi>>, node_id: usize) -> JsonResult {
     let node = this.node(NodeID(node_id))?;
     node.ctl.stop();
     node.ctl.node().subscribe();
@@ -231,7 +240,7 @@ fn set_node_status(this: State<WebApi>, node_id: usize) -> JsonResult {
 
 #[post("/node/send_message/<node_id>/<message_id>", format = "application/json", data = "<args>")]
 fn send_message(
-    this: State<WebApi>,
+    this: State<Arc<WebApi>>,
     node_id: usize,
     message_id: usize,
     args: Json<Vec<String>>,
@@ -264,7 +273,25 @@ fn send_message(
     resp_ok(json!({}))
 }
 
+fn run_notifier(ctx: Arc<Context>, api: Arc<WebApi>) {
+    thread::spawn(move || {
+        let api = api.clone();
+        listen("127.0.0.1:3012", move |out| {
+            let api = api.clone();
+            thread::spawn(move || {
+                loop {
+                    thread::sleep(Duration::from_millis(100));
+                    out.send(format!("{}", api.nodes_json().map(|x| (x.0).0).unwrap_or_else(|x| (x.0).0))).unwrap();
+                }
+            });
+            |_| { Ok(()) }
+        }).unwrap()
+    });
+}
+
 pub fn run_server(ctx: Arc<Context>) {
+    let api = Arc::new(WebApi::new(ctx.clone()));
+    run_notifier(ctx, api.clone());
     let options = rocket_cors::Cors::default();
     rocket::ignite()
         .mount(
@@ -279,7 +306,7 @@ pub fn run_server(ctx: Arc<Context>) {
                 send_message,
             ],
         )
-        .manage(WebApi::new(ctx))
+        .manage(api)
         .attach(options)
         .launch();
 }

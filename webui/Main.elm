@@ -7,6 +7,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Http
 import Task
+import WebSocket
 
 
 apiUrl =
@@ -128,6 +129,7 @@ type Msg
     | SentMessage Decode.Value
     | KillNode Node
     | KilledNode Decode.Value
+    | DataUpdate String
 
 
 emptyGraph =
@@ -390,6 +392,20 @@ refresh =
     Cmd.batch [ refreshTypes, refreshNodes ]
 
 
+dataUpdate : Model -> String -> Model
+dataUpdate model updateStr =
+    let
+        newNodes =
+            Decode.decodeString decodeNodes updateStr
+    in
+        case newNodes of
+            Ok newNodes ->
+                { model | graph = { types = model.graph.types, nodes = newNodes } }
+
+            Err e ->
+                raiseError model ("websocket parse: " ++ e)
+
+
 
 -- CONNECT --
 
@@ -540,10 +556,13 @@ update msg model =
         KilledNode value ->
             ( model, refreshNodes )
 
+        DataUpdate str ->
+            ( dataUpdate model str, Cmd.none )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Sub.none
+    WebSocket.listen "ws://localhost:3012" DataUpdate
 
 
 view : Model -> Html Msg
