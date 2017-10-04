@@ -102,4 +102,7 @@ impl RemoteControl {
     pub fn node(&self) -> &Node {
         &*self.node
     }
+    pub fn context(&self) -> Arc<Context> {
+        self.ctx.clone()
+    }
 }

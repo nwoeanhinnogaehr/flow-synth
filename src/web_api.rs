@@ -87,8 +87,8 @@ impl WebApi {
                             .map(|edge| {
                                 json!({
                                     "edge": {
-                                        "node": edge.node.id().0,
-                                        "port": edge.port.id().0,
+                                        "node": edge.node.0,
+                                        "port": edge.port.0,
                                     },
                                     "id": idx,
                                     "name": port.name(),
@@ -108,8 +108,8 @@ impl WebApi {
                             .map(|edge| {
                                 json!({
                                     "edge": {
-                                        "node": edge.node.id().0,
-                                        "port": edge.port.id().0,
+                                        "node": edge.node.0,
+                                        "port": edge.port.0,
                                     },
                                     "id": idx,
                                     "name": port.name(),
@@ -219,7 +219,7 @@ fn connect_port(
 fn disconnect_port(this: State<Arc<WebApi>>, node_id: usize, port_id: usize) -> JsonResult {
     let node = this.ctx.graph().node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("invalid node id"))))?;
     let port = node.in_port(InPortID(port_id)).map_err(|_| JsonErr(Json(json!("invalid port id"))))?;
-    match port.disconnect() {
+    match port.disconnect(this.ctx.graph()) {
         Err(_) => resp_err(json!("cannot disconnect: already connected")),
         Ok(_) => resp_ok(json!({})),
     }

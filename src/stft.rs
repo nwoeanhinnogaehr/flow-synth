@@ -62,8 +62,8 @@ impl NodeDescriptor for Stft {
                             queues.push(empty_q.clone());
                         }
                         "Remove port" => {
-                            node_ctx.node().pop_in_port();
-                            node_ctx.node().pop_out_port();
+                            node_ctx.node().pop_in_port(ctl.context().graph());
+                            node_ctx.node().pop_out_port(ctl.context().graph());
                             queues.pop();
                         }
                         _ => panic!(),
