@@ -2,7 +2,7 @@
 
 use rocket;
 use modular_flow::context::Context;
-use modular_flow::graph::{InPortID, NodeID, OutPortID, Port};
+use modular_flow::graph::{InPortID, NodeID, OutPortID};
 use std::sync::Arc;
 use rocket_contrib::{Json, Value};
 use rocket::{Request, Response, State};
@@ -219,7 +219,7 @@ fn connect_port(
 fn disconnect_port(this: State<Arc<WebApi>>, node_id: usize, port_id: usize) -> JsonResult {
     let node = this.ctx.graph().node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("invalid node id"))))?;
     let port = node.in_port(InPortID(port_id)).map_err(|_| JsonErr(Json(json!("invalid port id"))))?;
-    match port.disconnect(this.ctx.graph()) {
+    match this.ctx.graph().disconnect_in(port) {
         Err(_) => resp_err(json!("cannot disconnect: already connected")),
         Ok(_) => resp_ok(json!({})),
     }
@@ -273,7 +273,7 @@ fn send_message(
     resp_ok(json!({}))
 }
 
-fn run_notifier(ctx: Arc<Context>, api: Arc<WebApi>) {
+fn run_notifier(api: Arc<WebApi>) {
     thread::spawn(move || {
         let api = api.clone();
         listen("127.0.0.1:3012", move |out| {
@@ -290,8 +290,8 @@ fn run_notifier(ctx: Arc<Context>, api: Arc<WebApi>) {
 }
 
 pub fn run_server(ctx: Arc<Context>) {
-    let api = Arc::new(WebApi::new(ctx.clone()));
-    run_notifier(ctx, api.clone());
+    let api = Arc::new(WebApi::new(ctx));
+    run_notifier(api.clone());
     let options = rocket_cors::Cors::default();
     rocket::ignite()
         .mount(
