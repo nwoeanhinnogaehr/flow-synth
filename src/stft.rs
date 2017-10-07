@@ -18,8 +18,8 @@ pub const STFT: NodeDescriptor = NodeDescriptor {
     new: new_stft,
 };
 
-fn new_stft(ctx: Arc<Context>) -> Arc<RemoteControl> {
-    let id = ctx.graph().add_node(1, 1);
+fn new_stft(ctx: Arc<Context>, config: NewNodeConfig) -> Arc<RemoteControl> {
+    let id = config.node.unwrap_or_else(|| ctx.graph().add_node(1, 1));
     let node_ctx = ctx.node_ctx(id).unwrap();
     let node = ctx.graph().node(id).unwrap();
 
@@ -108,8 +108,8 @@ pub const ISTFT: NodeDescriptor = NodeDescriptor {
     new: new_istft,
 };
 
-fn new_istft(ctx: Arc<Context>) -> Arc<RemoteControl> {
-    let id = ctx.graph().add_node(2, 2);
+fn new_istft(ctx: Arc<Context>, config: NewNodeConfig) -> Arc<RemoteControl> {
+    let id = config.node.unwrap_or_else(|| ctx.graph().add_node(2, 2));
     let node_ctx = ctx.node_ctx(id).unwrap();
     let node = ctx.graph().node(id).unwrap();
     let remote_ctl = Arc::new(RemoteControl::new(ctx, node.clone(), vec![]));
@@ -167,8 +167,8 @@ pub const SPECTROGRAM_RENDER: NodeDescriptor = NodeDescriptor {
     new: new_specrogram_render,
 };
 
-fn new_specrogram_render(ctx: Arc<Context>) -> Arc<RemoteControl> {
-    let id = ctx.graph().add_node(1, 1);
+fn new_specrogram_render(ctx: Arc<Context>, config: NewNodeConfig) -> Arc<RemoteControl> {
+    let id = config.node.unwrap_or_else(|| ctx.graph().add_node(1, 1));
     let node_ctx = ctx.node_ctx(id).unwrap();
     let node = ctx.graph().node(id).unwrap();
     let remote_ctl = Arc::new(RemoteControl::new(ctx, node.clone(), vec![]));

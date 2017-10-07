@@ -2,16 +2,16 @@ use modular_flow::graph::Result;
 use modular_flow::context::*;
 use jack::prelude::*;
 use std::thread;
-use super::control::{NodeDescriptor, RemoteControl};
+use super::control::{NewNodeConfig, NodeDescriptor, RemoteControl};
 use std::sync::Arc;
 
 pub const AUDIO_IO: NodeDescriptor = NodeDescriptor {
-    name: "audio I/O",
+    name: "audio IO",
     new: new,
 };
 
-fn new(ctx: Arc<Context>) -> Arc<RemoteControl> {
-    let id = ctx.graph().add_node(2, 2);
+fn new(ctx: Arc<Context>, config: NewNodeConfig) -> Arc<RemoteControl> {
+    let id = config.node.unwrap_or_else(|| ctx.graph().add_node(2, 2));
     let node_ctx = ctx.node_ctx(id).unwrap();
     let node = ctx.graph().node(id).unwrap();
     let remote_ctl = Arc::new(RemoteControl::new(ctx, node, Vec::new()));

@@ -17,3 +17,9 @@ rocket_contrib = "*"
 rocket_cors = "*"
 libloading = "*"
 ws = "*"
+serde_json = "*"
+serde_derive = "*"
+
+[dependencies.serde]
+version = "*"
+features = ["rc"]

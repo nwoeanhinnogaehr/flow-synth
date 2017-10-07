@@ -18,38 +18,27 @@ use std::time::Duration;
 
 struct WebApi {
     ctx: Arc<Context>,
-    nodes: RwLock<Vec<Arc<NodeInstance>>>,
+    inst: InstanceList,
+    desc: DescriptorList,
 }
 
 impl WebApi {
-    fn new(ctx: Arc<Context>) -> WebApi {
-        WebApi {
-            ctx,
-            nodes: RwLock::new(Vec::new()),
-        }
+    fn new(ctx: Arc<Context>, desc: DescriptorList, inst: InstanceList) -> WebApi {
+        WebApi { ctx, inst, desc }
     }
 
     fn node(&self, id: NodeID) -> Result<Arc<NodeInstance>, JsonErr> {
-        let nodes = self.nodes.read().unwrap();
-        nodes
-            .iter()
-            .cloned()
-            .find(|node| node.ctl.node().id() == id)
-            .ok_or(JsonErr(Json(json!("invalid node"))))
+        self.inst.node(id).ok_or(JsonErr(Json(json!("invalid node"))))
     }
 
-    fn remove_node(&self, id: NodeID) -> Result<Arc<NodeInstance>, JsonErr> {
-        let mut nodes = self.nodes.write().unwrap();
-        let idx = nodes
-            .iter()
-            .cloned()
-            .position(|node| node.ctl.node().id() == id)
-            .ok_or(JsonErr(Json(json!("invalid node"))))?;
-        Ok(nodes.swap_remove(idx))
+    fn remove_node(&self, id: NodeID) -> Result<(), JsonErr> {
+        // TODO error
+        self.inst.remove(id);
+        Ok(())
     }
 
     fn nodes_json(&self) -> JsonResult {
-        let nodes = self.nodes.read().unwrap();
+        let nodes = self.inst.nodes();
         let nodes: Vec<_> = nodes
             .iter()
             .map(|node| {
@@ -114,7 +103,7 @@ impl WebApi {
                     .collect();
                 json!({
                     "id": node.ctl.node().id().0,
-                    "name": node.static_node.name,
+                    "name": node.name,
                     "ports": {
                         "in": in_ports,
                         "out": out_ports,
@@ -129,13 +118,13 @@ impl WebApi {
 }
 
 #[get("/type")]
-fn type_list() -> JsonResult {
-    let types: Vec<_> = TYPES
+fn type_list(this: State<Arc<WebApi>>) -> JsonResult {
+    let types: Vec<_> = this.desc
+        .nodes()
         .iter()
         .enumerate()
         .map(|(idx, node)| {
             json!({
-                "id": idx,
                 "name": node.name
             })
         })
@@ -156,17 +145,16 @@ fn status_string(node: &NodeInstance) -> &'static str {
     }
 }
 
-#[get("/type/<type_id>/new")]
-fn node_create(this: State<Arc<WebApi>>, type_id: usize) -> JsonResult {
-    if type_id >= TYPES.len() {
-        return resp_err(json!("id out of bounds"));
-    }
-    let ctl = (TYPES[type_id].new)(this.ctx.clone());
+//TODO make this post so names can contain arbitrary characters
+#[get("/type/<name>/new")]
+fn node_create(this: State<Arc<WebApi>>, name: String) -> JsonResult {
+    let desc = this.desc.node(&name).ok_or(JsonErr(Json(json!("id out of bounds"))))?;
+    let ctl = (desc.new)(this.ctx.clone(), NewNodeConfig { node: None });
     let id = ctl.node().id().0;
-    this.nodes.write().unwrap().push(Arc::new(NodeInstance {
+    this.inst.insert(NodeInstance {
         ctl,
-        static_node: &TYPES[type_id],
-    }));
+        name: desc.name,
+    });
     resp_ok(json!({
         "id": id,
     }))
@@ -258,18 +246,26 @@ fn run_notifier(api: Arc<WebApi>) {
         let api = api.clone();
         listen("127.0.0.1:3012", move |out| {
             let api = api.clone();
-            thread::spawn(move || loop {
-                thread::sleep(Duration::from_millis(100));
-                out.send(format!("{}", api.nodes_json().map(|x| (x.0).0).unwrap_or_else(|x| (x.0).0)))
-                    .unwrap();
+            thread::spawn(move || {
+                let mut prev_nodes_str = "".into();
+                loop {
+                    thread::sleep(Duration::from_millis(100));
+                    let nodes_str =
+                        format!("{}", api.nodes_json().map(|x| (x.0).0).unwrap_or_else(|x| (x.0).0));
+                    if nodes_str != prev_nodes_str {
+                        out.send(nodes_str.clone()).unwrap();
+                        serialize::to_file("dump.json", &api.ctx, &api.inst);
+                        prev_nodes_str = nodes_str;
+                    }
+                }
             });
             |_| Ok(())
         }).unwrap()
     });
 }
 
-pub fn run_server(ctx: Arc<Context>) {
-    let api = Arc::new(WebApi::new(ctx));
+pub fn run_server(ctx: Arc<Context>, desc_list: DescriptorList, inst_list: InstanceList) {
+    let api = Arc::new(WebApi::new(ctx, desc_list, inst_list));
     run_notifier(api.clone());
     let options = rocket_cors::Cors::default();
     rocket::ignite()

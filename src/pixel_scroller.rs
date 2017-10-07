@@ -1,6 +1,6 @@
 use modular_flow::graph::*;
 use modular_flow::context::*;
-use control::{NodeDescriptor, RemoteControl};
+use control::{NewNodeConfig, NodeDescriptor, RemoteControl};
 use sdl2;
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::rect::Rect;
@@ -15,8 +15,8 @@ pub const PIXEL_SCROLLER: NodeDescriptor = NodeDescriptor {
     new: new_pixel_scroller,
 };
 
-fn new_pixel_scroller(ctx: Arc<Context>) -> Arc<RemoteControl> {
-    let id = ctx.graph().add_node(1, 0);
+fn new_pixel_scroller(ctx: Arc<Context>, config: NewNodeConfig) -> Arc<RemoteControl> {
+    let id = config.node.unwrap_or_else(|| ctx.graph().add_node(1, 0));
     let node_ctx = ctx.node_ctx(id).unwrap();
     let node = ctx.graph().node(id).unwrap();
     let remote_ctl = Arc::new(RemoteControl::new(ctx, node, vec![]));

@@ -101,8 +101,7 @@ type alias MessageArg =
 
 
 type alias NodeType =
-    { id : Int
-    , name : String
+    { name : String
     }
 
 
@@ -307,8 +306,7 @@ decodePort portType =
 decodeTypes : Decode.Decoder (List NodeType)
 decodeTypes =
     Decode.list
-        (Decode.map2 NodeType
-            (Decode.field "id" Decode.int)
+        (Decode.map NodeType
             (Decode.field "name" Decode.string)
         )
 
@@ -363,7 +361,7 @@ httpPost path body decoder msg =
 addNode : NodeType -> Cmd Msg
 addNode nodeType =
     httpGet
-        ("type/" ++ toString nodeType.id ++ "/new")
+        ("type/" ++ nodeType.name ++ "/new")
         decodeAddNode
         AddedNode
 
