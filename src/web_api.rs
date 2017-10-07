@@ -8,9 +8,6 @@ use rocket_contrib::{Json, Value};
 use rocket::{Request, Response, State};
 use rocket::http::Status;
 use rocket::response::Responder;
-use audio_io;
-use stft;
-use pixel_scroller;
 use std::sync::RwLock;
 use rocket_cors;
 use control::*;
@@ -19,37 +16,9 @@ use std::thread;
 use ws::listen;
 use std::time::Duration;
 
-const TYPES: &'static [StaticNode] = &[
-    StaticNode {
-        name: audio_io::AudioIO::NAME,
-        make: audio_io::AudioIO::new,
-    },
-    StaticNode {
-        name: stft::Stft::NAME,
-        make: stft::Stft::new,
-    },
-    StaticNode {
-        name: stft::IStft::NAME,
-        make: stft::IStft::new,
-    },
-    StaticNode {
-        name: stft::SpectrogramRender::NAME,
-        make: stft::SpectrogramRender::new,
-    },
-    StaticNode {
-        name: pixel_scroller::PixelScroller::NAME,
-        make: pixel_scroller::PixelScroller::new,
-    },
-];
-
-struct ActiveNode {
-    ctl: Arc<RemoteControl>,
-    static_node: &'static StaticNode,
-}
-
 struct WebApi {
     ctx: Arc<Context>,
-    nodes: RwLock<Vec<Arc<ActiveNode>>>,
+    nodes: RwLock<Vec<Arc<NodeInstance>>>,
 }
 
 impl WebApi {
@@ -60,14 +29,22 @@ impl WebApi {
         }
     }
 
-    fn node(&self, id: NodeID) -> Result<Arc<ActiveNode>, JsonErr> {
+    fn node(&self, id: NodeID) -> Result<Arc<NodeInstance>, JsonErr> {
         let nodes = self.nodes.read().unwrap();
-        nodes.iter().cloned().find(|node| node.ctl.node().id() == id).ok_or(JsonErr(Json(json!("invalid node"))))
+        nodes
+            .iter()
+            .cloned()
+            .find(|node| node.ctl.node().id() == id)
+            .ok_or(JsonErr(Json(json!("invalid node"))))
     }
 
-    fn remove_node(&self, id: NodeID) -> Result<Arc<ActiveNode>, JsonErr> {
+    fn remove_node(&self, id: NodeID) -> Result<Arc<NodeInstance>, JsonErr> {
         let mut nodes = self.nodes.write().unwrap();
-        let idx = nodes.iter().cloned().position(|node| node.ctl.node().id() == id).ok_or(JsonErr(Json(json!("invalid node"))))?;
+        let idx = nodes
+            .iter()
+            .cloned()
+            .position(|node| node.ctl.node().id() == id)
+            .ok_or(JsonErr(Json(json!("invalid node"))))?;
         Ok(nodes.swap_remove(idx))
     }
 
@@ -95,9 +72,9 @@ impl WebApi {
 
                                 })
                             })
-                        .unwrap_or(json!({"id": idx, "name": port.name() }))
+                            .unwrap_or(json!({"id": idx, "name": port.name() }))
                     })
-                .collect();
+                    .collect();
                 let out_ports: Vec<_> = node.ctl
                     .node()
                     .out_ports()
@@ -116,9 +93,9 @@ impl WebApi {
 
                                 })
                             })
-                        .unwrap_or(json!({"id": idx, "name": port.name() }))
+                            .unwrap_or(json!({"id": idx, "name": port.name() }))
                     })
-                .collect();
+                    .collect();
                 let message_descriptors: Vec<_> = node.ctl
                     .message_descriptors()
                     .iter()
@@ -134,7 +111,7 @@ impl WebApi {
                                                         })).collect::<Vec<_>>(),
                         })
                     })
-                .collect();
+                    .collect();
                 json!({
                     "id": node.ctl.node().id().0,
                     "name": node.static_node.name,
@@ -146,10 +123,9 @@ impl WebApi {
                     "message_descriptors": message_descriptors,
                 })
             })
-        .collect();
+            .collect();
         resp_ok(json!(nodes))
     }
-
 }
 
 #[get("/type")]
@@ -172,7 +148,7 @@ fn node_list(this: State<Arc<WebApi>>) -> JsonResult {
     this.nodes_json()
 }
 
-fn status_string(node: &ActiveNode) -> &'static str {
+fn status_string(node: &NodeInstance) -> &'static str {
     if node.ctl.stopped() {
         "stopped"
     } else {
@@ -185,9 +161,9 @@ fn node_create(this: State<Arc<WebApi>>, type_id: usize) -> JsonResult {
     if type_id >= TYPES.len() {
         return resp_err(json!("id out of bounds"));
     }
-    let ctl = (TYPES[type_id].make)(this.ctx.clone());
+    let ctl = (TYPES[type_id].new)(this.ctx.clone());
     let id = ctl.node().id().0;
-    this.nodes.write().unwrap().push(Arc::new(ActiveNode {
+    this.nodes.write().unwrap().push(Arc::new(NodeInstance {
         ctl,
         static_node: &TYPES[type_id],
     }));
@@ -233,8 +209,12 @@ fn set_node_status(this: State<Arc<WebApi>>, node_id: usize) -> JsonResult {
         thread::park(); // TODO: relying on implementation detail
     }
     node.ctl.node().unsubscribe();
-    this.ctx.graph().remove_node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("couldn't remove node from graph"))))?;
-    this.remove_node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("couldn't remove node from active node list"))))?;
+    this.ctx
+        .graph()
+        .remove_node(NodeID(node_id))
+        .map_err(|_| JsonErr(Json(json!("couldn't remove node from graph"))))?;
+    this.remove_node(NodeID(node_id))
+        .map_err(|_| JsonErr(Json(json!("couldn't remove node from active node list"))))?;
     resp_ok(json!({}))
 }
 
@@ -278,13 +258,12 @@ fn run_notifier(api: Arc<WebApi>) {
         let api = api.clone();
         listen("127.0.0.1:3012", move |out| {
             let api = api.clone();
-            thread::spawn(move || {
-                loop {
-                    thread::sleep(Duration::from_millis(100));
-                    out.send(format!("{}", api.nodes_json().map(|x| (x.0).0).unwrap_or_else(|x| (x.0).0))).unwrap();
-                }
+            thread::spawn(move || loop {
+                thread::sleep(Duration::from_millis(100));
+                out.send(format!("{}", api.nodes_json().map(|x| (x.0).0).unwrap_or_else(|x| (x.0).0)))
+                    .unwrap();
             });
-            |_| { Ok(()) }
+            |_| Ok(())
         }).unwrap()
     });
 }

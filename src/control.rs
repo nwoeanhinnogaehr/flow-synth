@@ -4,22 +4,22 @@ use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 use modular_flow::context::Context;
 use modular_flow::graph::*;
+use audio_io;
+use stft;
+use pixel_scroller;
 
-#[derive(Debug)]
-pub struct StaticNode {
-    pub name: &'static str,
-    pub make: fn(Arc<Context>) -> Arc<RemoteControl>,
+pub const TYPES: &'static [NodeDescriptor] =
+    &[audio_io::AUDIO_IO, stft::STFT, stft::ISTFT, stft::SPECTROGRAM_RENDER, pixel_scroller::PIXEL_SCROLLER];
+
+pub struct NodeInstance {
+    pub ctl: Arc<RemoteControl>,
+    pub static_node: &'static NodeDescriptor,
 }
 
-pub trait NodeDescriptor {
-    const NAME: &'static str;
-    fn new(Arc<Context>) -> Arc<RemoteControl>;
-    fn describe() -> StaticNode {
-        StaticNode {
-            name: Self::NAME,
-            make: Self::new,
-        }
-    }
+#[derive(Debug)]
+pub struct NodeDescriptor {
+    pub name: &'static str,
+    pub new: fn(Arc<Context>) -> Arc<RemoteControl>,
 }
 
 pub mod message {
