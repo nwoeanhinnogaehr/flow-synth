@@ -7,6 +7,7 @@ pub struct NodeLibrary {
     lib: Library,
     pub nodes: Vec<NodeDescriptor>,
     pub name: &'static str,
+    pub path: String,
 }
 
 impl NodeLibrary {
@@ -21,7 +22,7 @@ impl NodeLibrary {
                 let func: Symbol<fn() -> &'static str> = lib.get(b"get_name")?;
                 func()
             };
-            Ok(NodeLibrary { lib, nodes, name })
+            Ok(NodeLibrary { lib, nodes, name, path: path.into() })
         }
     }
 }

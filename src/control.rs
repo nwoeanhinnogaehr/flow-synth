@@ -69,10 +69,11 @@ pub struct NodeDescriptors {
 impl NodeDescriptors {
     pub fn new() -> NodeDescriptors {
         NodeDescriptors {
-            libs: Mutex::new(vec![
-                NodeLibrary::load("/home/i/flow-plugs/target/release/libflow_plugs.so").unwrap(),
-            ]),
+            libs: Mutex::new(vec![]),
         }
+    }
+    pub fn lib_paths(&self) -> Vec<String> {
+        self.libs.lock().unwrap().iter().map(|lib| lib.path.clone()).collect()
     }
     pub fn load_library(&self, path: &str) -> plugin_loader::Result<&'static str> {
         let lib = NodeLibrary::load(path)?;

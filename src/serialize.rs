@@ -11,14 +11,20 @@ struct InstanceDesc {
     name: String,
     id: NodeID,
 }
+#[derive(Serialize, Deserialize)]
+struct LibraryDesc {
+    path: String,
+}
 #[derive(Serialize)]
 struct Container<'a> {
     inst_desc: Vec<InstanceDesc>,
+    libs: Vec<LibraryDesc>,
     graph: &'a Graph,
 }
 #[derive(Deserialize)]
 struct OwningContainer {
     inst_desc: Vec<InstanceDesc>,
+    libs: Vec<LibraryDesc>,
     graph: Graph,
 }
 pub fn to_string(inst: &Instance) -> String {
@@ -32,16 +38,20 @@ pub fn to_string(inst: &Instance) -> String {
                 }
             })
         .collect(),
+        libs: inst.types.lib_paths().iter().cloned().map(|path| LibraryDesc { path }).collect(),
         graph: inst.ctx.graph(),
     };
     serde_json::to_string(&container).unwrap()
 }
 pub fn from_string(serialized: String) -> Instance {
     let container: OwningContainer = serde_json::from_str(&serialized).unwrap();
-    let OwningContainer { inst_desc, graph } = container;
+    let OwningContainer { inst_desc, libs, graph } = container;
     let ctx = Arc::new(Context::new(graph));
     let types = NodeDescriptors::new();
     let nodes = NodeInstances::new();
+    for lib in libs {
+        types.load_library(&lib.path);
+    }
     for it in inst_desc {
         let node_desc = types.node(&it.name).expect("node desc not loaded");
         let node_inst = NodeInstance {
