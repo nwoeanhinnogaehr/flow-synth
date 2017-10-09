@@ -31,18 +31,14 @@ mod control;
 mod serialize;
 mod plugin_loader;
 
-use modular_flow::graph::*;
-use modular_flow::context::*;
-use std::sync::Arc;
 use std::env;
 
 fn main() {
     println!("{:?}", plugin_loader::load("/home/i/flow-plugs/target/release/libflow_plugs.so"));
-    let desc_list = control::DescriptorList::new();
-    let (ctx, inst_list) = if let Some(name) = env::args().nth(1) {
-        serialize::from_file(&name, &desc_list)
+    let inst = if let Some(name) = env::args().nth(1) {
+        serialize::from_file(&name)
     } else {
-        (Arc::new(Context::new(Graph::new())), control::InstanceList::new())
+        control::Instance::new()
     };
-    web_api::run_server(ctx, desc_list, inst_list);
+    web_api::run_server(inst);
 }

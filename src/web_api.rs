@@ -1,7 +1,6 @@
 // TODO: restructure this file
 
 use rocket;
-use modular_flow::context::Context;
 use modular_flow::graph::{InPortID, NodeID, OutPortID};
 use std::sync::Arc;
 use rocket_contrib::{Json, Value};
@@ -16,28 +15,26 @@ use ws::listen;
 use std::time::Duration;
 
 struct WebApi {
-    ctx: Arc<Context>,
-    inst: InstanceList,
-    desc: DescriptorList,
+    inst: Instance,
 }
 
 impl WebApi {
-    fn new(ctx: Arc<Context>, desc: DescriptorList, inst: InstanceList) -> WebApi {
-        WebApi { ctx, inst, desc }
+    fn new(inst: Instance) -> WebApi {
+        WebApi { inst }
     }
 
     fn node(&self, id: NodeID) -> Result<Arc<NodeInstance>, JsonErr> {
-        self.inst.node(id).ok_or(JsonErr(Json(json!("invalid node"))))
+        self.inst.nodes.node(id).ok_or(JsonErr(Json(json!("invalid node"))))
     }
 
     fn remove_node(&self, id: NodeID) -> Result<(), JsonErr> {
         // TODO error
-        self.inst.remove(id);
+        self.inst.nodes.remove(id);
         Ok(())
     }
 
     fn nodes_json(&self) -> JsonResult {
-        let nodes = self.inst.nodes();
+        let nodes = self.inst.nodes.nodes();
         let nodes: Vec<_> = nodes
             .iter()
             .map(|node| {
@@ -118,11 +115,10 @@ impl WebApi {
 
 #[get("/type")]
 fn type_list(this: State<Arc<WebApi>>) -> JsonResult {
-    let types: Vec<_> = this.desc
+    let types: Vec<_> = this.inst.types
         .nodes()
         .iter()
-        .enumerate()
-        .map(|(idx, node)| {
+        .map(|node| {
             json!({
                 "name": node.name
             })
@@ -147,10 +143,10 @@ fn status_string(node: &NodeInstance) -> &'static str {
 //TODO make this post so names can contain arbitrary characters
 #[get("/type/<name>/new")]
 fn node_create(this: State<Arc<WebApi>>, name: String) -> JsonResult {
-    let desc = this.desc.node(&name).ok_or(JsonErr(Json(json!("id out of bounds"))))?;
-    let ctl = (desc.new)(this.ctx.clone(), NewNodeConfig { node: None });
+    let desc = this.inst.types.node(&name).ok_or(JsonErr(Json(json!("id out of bounds"))))?;
+    let ctl = (desc.new)(this.inst.ctx.clone(), NewNodeConfig { node: None });
     let id = ctl.node().id().0;
-    this.inst.insert(NodeInstance {
+    this.inst.nodes.insert(NodeInstance {
         ctl,
         name: desc.name,
     });
@@ -167,7 +163,7 @@ fn connect_port(
     dst_node_id: usize,
     dst_port_id: usize,
 ) -> JsonResult {
-    match this.ctx.graph().connect(
+    match this.inst.ctx.graph().connect(
         NodeID(src_node_id),
         OutPortID(src_port_id),
         NodeID(dst_node_id),
@@ -180,9 +176,9 @@ fn connect_port(
 
 #[get("/node/disconnect/<node_id>/<port_id>")]
 fn disconnect_port(this: State<Arc<WebApi>>, node_id: usize, port_id: usize) -> JsonResult {
-    let node = this.ctx.graph().node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("invalid node id"))))?;
+    let node = this.inst.ctx.graph().node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("invalid node id"))))?;
     let port = node.in_port(InPortID(port_id)).map_err(|_| JsonErr(Json(json!("invalid port id"))))?;
-    match this.ctx.graph().disconnect_in(port) {
+    match this.inst.ctx.graph().disconnect_in(port) {
         Err(_) => resp_err(json!("cannot disconnect: already connected")),
         Ok(_) => resp_ok(json!({})),
     }
@@ -196,7 +192,7 @@ fn set_node_status(this: State<Arc<WebApi>>, node_id: usize) -> JsonResult {
         thread::park(); // TODO: relying on implementation detail
     }
     node.ctl.node().unsubscribe();
-    this.ctx
+    this.inst.ctx
         .graph()
         .remove_node(NodeID(node_id))
         .map_err(|_| JsonErr(Json(json!("couldn't remove node from graph"))))?;
@@ -253,7 +249,7 @@ fn run_notifier(api: Arc<WebApi>) {
                         format!("{}", api.nodes_json().map(|x| (x.0).0).unwrap_or_else(|x| (x.0).0));
                     if nodes_str != prev_nodes_str {
                         out.send(nodes_str.clone()).unwrap();
-                        serialize::to_file("dump.json", &api.ctx, &api.inst);
+                        serialize::to_file("dump.json", &api.inst);
                         prev_nodes_str = nodes_str;
                     }
                 }
@@ -263,8 +259,8 @@ fn run_notifier(api: Arc<WebApi>) {
     });
 }
 
-pub fn run_server(ctx: Arc<Context>, desc_list: DescriptorList, inst_list: InstanceList) {
-    let api = Arc::new(WebApi::new(ctx, desc_list, inst_list));
+pub fn run_server(inst: Instance) {
+    let api = Arc::new(WebApi::new(inst));
     run_notifier(api.clone());
     let options = rocket_cors::Cors::default();
     rocket::ignite()

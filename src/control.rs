@@ -8,19 +8,35 @@ use audio_io;
 use stft;
 use pixel_scroller;
 
+pub struct Instance {
+    pub ctx: Arc<Context>,
+    pub nodes: NodeInstances,
+    pub types: NodeDescriptors,
+}
+
+impl Instance {
+    pub fn new() -> Instance {
+        Instance {
+            ctx: Arc::new(Context::new(Graph::new())),
+            nodes: NodeInstances::new(),
+            types: NodeDescriptors::new(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct NodeInstance {
     pub ctl: Arc<RemoteControl>,
     pub name: &'static str,
 }
 
-pub struct InstanceList {
+pub struct NodeInstances {
     list: Mutex<Vec<Arc<NodeInstance>>>,
 }
 
-impl InstanceList {
-    pub fn new() -> InstanceList {
-        InstanceList {
+impl NodeInstances {
+    pub fn new() -> NodeInstances {
+        NodeInstances {
             list: Mutex::new(Vec::new()),
         }
     }
@@ -48,13 +64,13 @@ pub struct NodeDescriptor {
     pub new: fn(Arc<Context>, NewNodeConfig) -> Arc<RemoteControl>,
 }
 
-pub struct DescriptorList {
+pub struct NodeDescriptors {
     list: Mutex<Vec<NodeDescriptor>>,
 }
 
-impl DescriptorList {
-    pub fn new() -> DescriptorList {
-        DescriptorList {
+impl NodeDescriptors {
+    pub fn new() -> NodeDescriptors {
+        NodeDescriptors {
             list: Mutex::new(vec![
                 audio_io::AUDIO_IO,
                 stft::STFT,
