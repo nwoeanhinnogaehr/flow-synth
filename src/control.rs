@@ -20,8 +20,8 @@ impl Instance {
             types: NodeDescriptors::new(),
         }
     }
-    pub fn reload_lib(&self, path: &str) {
-        let lib = self.types.reload_library(path).unwrap();
+    pub fn load_lib(&self, path: &str) {
+        let lib = self.types.load_library(path).unwrap();
         for node in self.nodes.nodes() {
             if let Some(node_desc) = lib.nodes.iter().find(|desc| desc.name == node.type_name) {
                 self.stop_node(node.ctl.node().id()).unwrap();
@@ -107,18 +107,21 @@ impl NodeDescriptors {
     pub fn libs(&self) -> Vec<Arc<NodeLibrary>> {
         self.libs.lock().unwrap().clone()
     }
+    /// Replaces existing library with the same name if it exists
     pub fn load_library(&self, path: &str) -> plugin_loader::Result<Arc<NodeLibrary>> {
-        let lib = Arc::new(NodeLibrary::load(path)?);
-        self.libs.lock().unwrap().push(lib.clone());
-        Ok(lib)
-    }
-    pub fn reload_library(&self, path: &str) -> plugin_loader::Result<Arc<NodeLibrary>> {
-        let new_lib = NodeLibrary::load(path)?;
+        let new_lib = Arc::new(NodeLibrary::load(path)?);
         let name = new_lib.name;
         let mut libs = self.libs.lock().unwrap();
-        let old_lib = libs.iter_mut().find(|lib| lib.name == name).unwrap();
-        *old_lib = Arc::new(new_lib);
-        Ok(old_lib.clone())
+        let mut need_add = false; // TODO borrowck hack. non-lexical lifetimes fixes this?
+        if let Some(old_lib) = libs.iter_mut().find(|lib| lib.name == name) {
+            *old_lib = new_lib.clone();
+        } else {
+            need_add = true;
+        }
+        if need_add {
+            libs.push(new_lib.clone());
+        }
+        Ok(new_lib)
     }
     pub fn node(&self, name: &str) -> Option<NodeDescriptor> {
         self.nodes().iter().cloned().find(|node| node.name == name)

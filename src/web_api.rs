@@ -229,9 +229,9 @@ fn send_message(
     resp_ok(json!({}))
 }
 
-#[post("/type/reload_library", format = "application/json", data = "<path>")]
-fn reload_library(this: State<Arc<WebApi>>, path: Json<String>) -> JsonResult {
-    this.inst.reload_lib(&path);
+#[post("/type/load_library", format = "application/json", data = "<path>")]
+fn load_library(this: State<Arc<WebApi>>, path: Json<String>) -> JsonResult {
+    this.inst.load_lib(&path);
     resp_ok(json!({}))
 }
 
@@ -272,7 +272,7 @@ pub fn run_server(inst: Instance) {
                 disconnect_port,
                 set_node_status,
                 send_message,
-                reload_library,
+                load_library,
             ],
         )
         .manage(api)

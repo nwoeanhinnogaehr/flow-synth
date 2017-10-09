@@ -1,7 +1,7 @@
 module Main exposing (..)
 
 import Html exposing (Html, button, div, text, ol, ul, li, b, i, br, code, input)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onClick, onInput)
 import Html.Attributes exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -22,6 +22,7 @@ type alias Model =
     { graph : Graph
     , err : Maybe String
     , mode : Mode
+    , libPath : String
     }
 
 
@@ -29,6 +30,7 @@ emptyModel =
     { graph = emptyGraph
     , err = Nothing
     , mode = Normal
+    , libPath = ""
     }
 
 
@@ -135,8 +137,9 @@ type Msg
     | KillNode Node
     | KilledNode Decode.Value
     | DataUpdate String
-    | ReloadLibrary NodeLibrary
-    | ReloadedLibrary Decode.Value
+    | LoadLibrary String
+    | LoadedLibrary Decode.Value
+    | NewLibPath String
 
 
 emptyGraph =
@@ -154,6 +157,10 @@ libsView : Model -> Html Msg
 libsView model =
     div []
         [ text "Node libraries:"
+        , div []
+            [ input [ placeholder "Path to new lib...", onInput NewLibPath ] []
+            , button [ onClick (LoadLibrary model.libPath) ] [ text "Load" ]
+            ]
         , ul [] (List.map (libView model) model.graph.libs)
         ]
 
@@ -162,7 +169,7 @@ libView : Model -> NodeLibrary -> Html Msg
 libView model lib =
     li []
         [ text lib.name
-        , button [ onClick (ReloadLibrary lib) ] [ text "Reload" ]
+        , button [ onClick (LoadLibrary lib.path) ] [ text "Reload" ]
         ]
 
 
@@ -510,12 +517,12 @@ killNode node =
         KilledNode
 
 
-reloadLibrary lib =
+loadLibrary path =
     httpPost
-        "type/reload_library/"
-        (Encode.string lib.path)
+        "type/load_library/"
+        (Encode.string path)
         Decode.value
-        ReloadedLibrary
+        LoadedLibrary
 
 
 
@@ -592,11 +599,14 @@ update msg model =
         DataUpdate str ->
             ( dataUpdate model str, Cmd.none )
 
-        ReloadLibrary lib ->
-            ( model, reloadLibrary lib )
+        LoadLibrary lib ->
+            ( model, loadLibrary lib )
 
-        ReloadedLibrary value ->
+        LoadedLibrary value ->
             ( model, doRefresh )
+
+        NewLibPath path ->
+            ( { model | libPath = path }, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
