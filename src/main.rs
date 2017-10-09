@@ -28,6 +28,7 @@ mod stft;
 mod pixel_scroller;
 mod web_api;
 mod control;
+mod serialize;
 mod plugin_loader;
 
 use modular_flow::graph::*;
@@ -39,7 +40,7 @@ fn main() {
     println!("{:?}", plugin_loader::load("/home/i/flow-plugs/target/release/libflow_plugs.so"));
     let desc_list = control::DescriptorList::new();
     let (ctx, inst_list) = if let Some(name) = env::args().nth(1) {
-        control::serialize::from_file(&name, &desc_list)
+        serialize::from_file(&name, &desc_list)
     } else {
         (Arc::new(Context::new(Graph::new())), control::InstanceList::new())
     };
