@@ -33,7 +33,7 @@ pub fn to_string(inst: &Instance) -> String {
             .iter()
             .map(|node| {
                 InstanceDesc {
-                    type_name: node.type_name.into(),
+                    type_name: node.type_name.clone(),
                     id: node.ctl.node().id(),
                 }
             })

@@ -1,7 +1,8 @@
 use std::thread::{self, Thread};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
+use std::fs;
 use modular_flow::graph::*;
 use modular_flow::context::Context;
 use plugin_loader::{self, NodeLibrary};
@@ -21,15 +22,25 @@ impl Instance {
         }
     }
     pub fn load_lib(&self, path: &str) {
+        {
+            let libs = self.types.libs();
+            let old_lib = libs.iter().find(|lib| lib.path == path);
+            if let Some(old_lib) = old_lib {
+                for node in self.nodes.nodes() {
+                    if old_lib.nodes.iter().find(|desc| desc.name == node.type_name).is_some() {
+                        self.stop_node(node.ctl.node().id()).unwrap();
+                    }
+                }
+            }
+        }
         let lib = self.types.load_library(path).unwrap();
         for node in self.nodes.nodes() {
             if let Some(node_desc) = lib.nodes.iter().find(|desc| desc.name == node.type_name) {
-                self.stop_node(node.ctl.node().id()).unwrap();
                 self.nodes.remove(node.ctl.node().id());
                 let ctl = (node_desc.new)(self.ctx.clone(), NewNodeConfig { node: Some(node.ctl.node().id()) });
                 self.nodes.insert(NodeInstance {
                     ctl,
-                    type_name: node.type_name,
+                    type_name: node.type_name.clone(),
                 });
             }
         }
@@ -57,7 +68,7 @@ impl Instance {
 #[derive(Clone)]
 pub struct NodeInstance {
     pub ctl: Arc<RemoteControl>,
-    pub type_name: &'static str,
+    pub type_name: String,
 }
 
 pub struct NodeInstances {
@@ -90,37 +101,36 @@ pub struct NewNodeConfig {
 
 #[derive(Clone, Debug)]
 pub struct NodeDescriptor {
-    pub name: &'static str,
+    pub name: String,
     pub new: fn(Arc<Context>, NewNodeConfig) -> Arc<RemoteControl>,
 }
 
 pub struct NodeDescriptors {
+    load_count: AtomicUsize,
     libs: Mutex<Vec<Arc<NodeLibrary>>>,
 }
 
 impl NodeDescriptors {
     pub fn new() -> NodeDescriptors {
         NodeDescriptors {
+            load_count: AtomicUsize::new(0),
             libs: Mutex::new(vec![]),
         }
     }
     pub fn libs(&self) -> Vec<Arc<NodeLibrary>> {
         self.libs.lock().unwrap().clone()
     }
-    /// Replaces existing library with the same name if it exists
+    /// Replaces existing library with the same path if it exists
     pub fn load_library(&self, path: &str) -> plugin_loader::Result<Arc<NodeLibrary>> {
-        let new_lib = Arc::new(NodeLibrary::load(path)?);
-        let name = new_lib.name;
         let mut libs = self.libs.lock().unwrap();
-        let mut need_add = false; // TODO borrowck hack. non-lexical lifetimes fixes this?
-        if let Some(old_lib) = libs.iter_mut().find(|lib| lib.name == name) {
-            *old_lib = new_lib.clone();
-        } else {
-            need_add = true;
+        if let Some(old_lib_idx) = libs.iter_mut().position(|lib| lib.path == path) {
+            let old_lib = libs.swap_remove(old_lib_idx);
+            fs::remove_file(&old_lib.file_path).unwrap();
         }
-        if need_add {
-            libs.push(new_lib.clone());
-        }
+        let new_path = path.to_string() + &usize::to_string(&self.load_count.fetch_add(1, Ordering::SeqCst));
+        fs::copy(path, &new_path).unwrap();
+        let new_lib = Arc::new(NodeLibrary::load(path, &new_path)?);
+        libs.push(new_lib.clone());
         Ok(new_lib)
     }
     pub fn node(&self, name: &str) -> Option<NodeDescriptor> {
@@ -153,7 +163,7 @@ pub mod message {
     }
     #[derive(Clone, Debug)]
     pub struct Desc {
-        pub name: &'static str,
+        pub name: String,
         pub args: Vec<ArgDesc>,
     }
     #[derive(Clone, Debug)]
