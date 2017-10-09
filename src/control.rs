@@ -4,9 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 use modular_flow::graph::*;
 use modular_flow::context::Context;
-use audio_io;
-use stft;
-use pixel_scroller;
+use plugin_loader::{self, NodeLibrary};
 
 pub struct Instance {
     pub ctx: Arc<Context>,
@@ -65,32 +63,28 @@ pub struct NodeDescriptor {
 }
 
 pub struct NodeDescriptors {
-    list: Mutex<Vec<NodeDescriptor>>,
+    libs: Mutex<Vec<NodeLibrary>>,
 }
 
 impl NodeDescriptors {
     pub fn new() -> NodeDescriptors {
         NodeDescriptors {
-            list: Mutex::new(vec![
-                audio_io::AUDIO_IO,
-                stft::STFT,
-                stft::ISTFT,
-                stft::SPECTROGRAM_RENDER,
-                pixel_scroller::PIXEL_SCROLLER,
+            libs: Mutex::new(vec![
+                NodeLibrary::load("/home/i/flow-plugs/target/release/libflow_plugs.so").unwrap(),
             ]),
         }
     }
-    pub fn insert(&self, desc: NodeDescriptor) {
-        self.list.lock().unwrap().push(desc);
-    }
-    pub fn remove(&self, name: &str) {
-        self.list.lock().unwrap().retain(|desc| desc.name != name);
+    pub fn load_library(&self, path: &str) -> plugin_loader::Result<&'static str> {
+        let lib = NodeLibrary::load(path)?;
+        let name = lib.name;
+        self.libs.lock().unwrap().push(lib);
+        Ok(name)
     }
     pub fn node(&self, name: &str) -> Option<NodeDescriptor> {
-        self.list.lock().unwrap().iter().cloned().find(|node| node.name == name)
+        self.nodes().iter().cloned().find(|node| node.name == name)
     }
     pub fn nodes(&self) -> Vec<NodeDescriptor> {
-        self.list.lock().unwrap().clone()
+        self.libs.lock().unwrap().iter().flat_map(|lib| lib.nodes.clone()).collect()
     }
 }
 

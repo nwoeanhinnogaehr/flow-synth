@@ -5,12 +5,6 @@ authors = ["Noah Weninger <nweninge@ualberta.ca>"]
 
 [dependencies]
 modular-flow = { path = "../modular-flow" }
-jack = "*"
-sdl2 = "*"
-rustfft = "*"
-palette = "*"
-apodize = "*"
-vec_map = "*"
 rocket = "*"
 rocket_codegen = "*"
 rocket_contrib = "*"
