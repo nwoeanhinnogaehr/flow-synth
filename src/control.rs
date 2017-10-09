@@ -20,12 +20,44 @@ impl Instance {
             types: NodeDescriptors::new(),
         }
     }
+    pub fn reload_lib(&self, path: &str) {
+        let lib = self.types.reload_library(path).unwrap();
+        for node in self.nodes.nodes() {
+            if let Some(node_desc) = lib.nodes.iter().find(|desc| desc.name == node.type_name) {
+                self.stop_node(node.ctl.node().id()).unwrap();
+                self.nodes.remove(node.ctl.node().id());
+                let ctl = (node_desc.new)(self.ctx.clone(), NewNodeConfig { node: Some(node.ctl.node().id()) });
+                self.nodes.insert(NodeInstance {
+                    ctl,
+                    type_name: node.type_name,
+                });
+            }
+        }
+    }
+    pub fn kill_node(&self, id: NodeID) -> Result<()> {
+        self.stop_node(id)?;
+        self.ctx
+            .graph()
+            .remove_node(id)?;
+        self.nodes.remove(id);
+        Ok(())
+    }
+    pub fn stop_node(&self, id: NodeID) -> Result<Arc<NodeInstance>> {
+        let node = self.nodes.node(id).ok_or(Error::InvalidNode)?;
+        node.ctl.stop();
+        node.ctl.node().subscribe();
+        while node.ctl.node().attached() {
+            thread::park(); // TODO: relying on implementation detail
+        }
+        node.ctl.node().unsubscribe();
+        Ok(node)
+    }
 }
 
 #[derive(Clone)]
 pub struct NodeInstance {
     pub ctl: Arc<RemoteControl>,
-    pub name: &'static str,
+    pub type_name: &'static str,
 }
 
 pub struct NodeInstances {
@@ -63,7 +95,7 @@ pub struct NodeDescriptor {
 }
 
 pub struct NodeDescriptors {
-    libs: Mutex<Vec<NodeLibrary>>,
+    libs: Mutex<Vec<Arc<NodeLibrary>>>,
 }
 
 impl NodeDescriptors {
@@ -72,14 +104,21 @@ impl NodeDescriptors {
             libs: Mutex::new(vec![]),
         }
     }
-    pub fn lib_paths(&self) -> Vec<String> {
-        self.libs.lock().unwrap().iter().map(|lib| lib.path.clone()).collect()
+    pub fn libs(&self) -> Vec<Arc<NodeLibrary>> {
+        self.libs.lock().unwrap().clone()
     }
-    pub fn load_library(&self, path: &str) -> plugin_loader::Result<&'static str> {
-        let lib = NodeLibrary::load(path)?;
-        let name = lib.name;
-        self.libs.lock().unwrap().push(lib);
-        Ok(name)
+    pub fn load_library(&self, path: &str) -> plugin_loader::Result<Arc<NodeLibrary>> {
+        let lib = Arc::new(NodeLibrary::load(path)?);
+        self.libs.lock().unwrap().push(lib.clone());
+        Ok(lib)
+    }
+    pub fn reload_library(&self, path: &str) -> plugin_loader::Result<Arc<NodeLibrary>> {
+        let new_lib = NodeLibrary::load(path)?;
+        let name = new_lib.name;
+        let mut libs = self.libs.lock().unwrap();
+        let old_lib = libs.iter_mut().find(|lib| lib.name == name).unwrap();
+        *old_lib = Arc::new(new_lib);
+        Ok(old_lib.clone())
     }
     pub fn node(&self, name: &str) -> Option<NodeDescriptor> {
         self.nodes().iter().cloned().find(|node| node.name == name)

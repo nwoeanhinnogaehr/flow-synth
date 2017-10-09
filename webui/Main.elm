@@ -71,7 +71,7 @@ type alias Edge =
 
 type alias Node =
     { id : Int
-    , name : String
+    , type_name : String
     , ports : Ports
     , messageDescriptors : List MessageDescriptor
     }
@@ -108,6 +108,13 @@ type alias NodeType =
 type alias Graph =
     { nodes : List Node
     , types : List NodeType
+    , libs : List NodeLibrary
+    }
+
+
+type alias NodeLibrary =
+    { name : String
+    , path : String
     }
 
 
@@ -115,8 +122,7 @@ type Msg
     = ResponseWrapper (Result Http.Error Msg)
     | ErrorResponse Decode.Value
     | Refresh
-    | RefreshNodes (List Node)
-    | RefreshTypes (List NodeType)
+    | Refreshed Graph
     | AddNode NodeType
     | AddedNode Int
     | StartConnecting Node Port
@@ -129,16 +135,35 @@ type Msg
     | KillNode Node
     | KilledNode Decode.Value
     | DataUpdate String
+    | ReloadLibrary NodeLibrary
+    | ReloadedLibrary Decode.Value
 
 
 emptyGraph =
     { nodes = []
     , types = []
+    , libs = []
     }
 
 
 
 -- VIEW --
+
+
+libsView : Model -> Html Msg
+libsView model =
+    div []
+        [ text "Node libraries:"
+        , ul [] (List.map (libView model) model.graph.libs)
+        ]
+
+
+libView : Model -> NodeLibrary -> Html Msg
+libView model lib =
+    li []
+        [ text lib.name
+        , button [ onClick (ReloadLibrary lib) ] [ text "Reload" ]
+        ]
 
 
 typesView : Model -> Html Msg
@@ -167,7 +192,7 @@ nodeView model node =
     li []
         [ div []
             [ button [ onClick (KillNode node) ] [ text "Kill" ]
-            , b [] [ text node.name ]
+            , b [] [ text node.type_name ]
             , ul [] (List.map (messageDescriptorView model node) node.messageDescriptors)
             , text "Inputs:"
             , ol [] (List.map (portView model node) node.ports.input)
@@ -255,12 +280,29 @@ errorView model =
 -- DECODE --
 
 
+decodeGraph : Decode.Decoder Graph
+decodeGraph =
+    Decode.map3 Graph
+        (Decode.field "nodes" decodeNodes)
+        (Decode.field "types" decodeTypes)
+        (Decode.field "libs" decodeLibs)
+
+
+decodeLibs : Decode.Decoder (List NodeLibrary)
+decodeLibs =
+    Decode.list
+        (Decode.map2 NodeLibrary
+            (Decode.field "name" Decode.string)
+            (Decode.field "path" Decode.string)
+        )
+
+
 decodeNodes : Decode.Decoder (List Node)
 decodeNodes =
     Decode.list
         (Decode.map4 Node
             (Decode.field "id" Decode.int)
-            (Decode.field "name" Decode.string)
+            (Decode.field "type_name" Decode.string)
             (Decode.field "ports" decodePorts)
             (Decode.field "message_descriptors" (Decode.list decodeMessageDescriptor))
         )
@@ -361,7 +403,7 @@ httpPost path body decoder msg =
 addNode : NodeType -> Cmd Msg
 addNode nodeType =
     httpGet
-        ("type/" ++ nodeType.name ++ "/new")
+        ("type/new/" ++ nodeType.name)
         decodeAddNode
         AddedNode
 
@@ -370,35 +412,23 @@ addNode nodeType =
 -- REFRESH --
 
 
-refreshNodes : Cmd Msg
-refreshNodes =
+doRefresh : Cmd Msg
+doRefresh =
     httpGet
-        "node"
-        decodeNodes
-        RefreshNodes
-
-
-refreshTypes : Cmd Msg
-refreshTypes =
-    httpGet
-        "type"
-        decodeTypes
-        RefreshTypes
-
-
-refresh =
-    Cmd.batch [ refreshTypes, refreshNodes ]
+        "state"
+        decodeGraph
+        Refreshed
 
 
 dataUpdate : Model -> String -> Model
 dataUpdate model updateStr =
     let
-        newNodes =
-            Decode.decodeString decodeNodes updateStr
+        newGraph =
+            Decode.decodeString decodeGraph updateStr
     in
-        case newNodes of
-            Ok newNodes ->
-                { model | graph = { types = model.graph.types, nodes = newNodes } }
+        case newGraph of
+            Ok newGraph ->
+                { model | graph = newGraph }
 
             Err e ->
                 raiseError model ("websocket parse: " ++ e)
@@ -467,7 +497,7 @@ decodeDisconnect =
 
 sendMessage node msg =
     httpPost
-        ("/node/send_message/" ++ toString node.id ++ "/" ++ toString msg.id)
+        ("node/send_message/" ++ toString node.id ++ "/" ++ toString msg.id)
         (Encode.list (List.map Encode.string msg.args))
         Decode.value
         SentMessage
@@ -475,9 +505,17 @@ sendMessage node msg =
 
 killNode node =
     httpGet
-        ("/node/kill/" ++ toString node.id)
+        ("node/kill/" ++ toString node.id)
         Decode.value
         KilledNode
+
+
+reloadLibrary lib =
+    httpPost
+        "type/reload_library/"
+        (Encode.string lib.path)
+        Decode.value
+        ReloadedLibrary
 
 
 
@@ -496,7 +534,7 @@ raiseError model err =
 init : ( Model, Cmd Msg )
 init =
     ( emptyModel
-    , refresh
+    , doRefresh
     )
 
 
@@ -513,19 +551,16 @@ update msg model =
             ( raiseError model ("Server errored: " ++ toString err), Cmd.none )
 
         Refresh ->
-            ( model, Cmd.batch [ refreshNodes, refreshTypes ] )
+            ( model, doRefresh )
 
-        RefreshNodes newNodes ->
-            ( { model | graph = { types = model.graph.types, nodes = newNodes } }, Cmd.none )
-
-        RefreshTypes newTypes ->
-            ( { model | graph = { types = newTypes, nodes = model.graph.nodes } }, Cmd.none )
+        Refreshed newGraph ->
+            ( { model | graph = newGraph }, Cmd.none )
 
         AddNode nodeType ->
             ( model, addNode nodeType )
 
         AddedNode nodeId ->
-            ( model, refreshNodes )
+            ( model, doRefresh )
 
         StartConnecting node port_ ->
             ( { model | mode = Connecting { node = node, port_ = port_, portType = port_.portType } }, Cmd.none )
@@ -534,28 +569,34 @@ update msg model =
             ( { model | mode = Normal }, doConnect srcNode srcPort dstNode dstPort )
 
         Connected value ->
-            ( model, refreshNodes )
+            ( model, doRefresh )
 
         DoDisconnect node port_ edge ->
             ( model, doDisconnect node port_ edge )
 
         Disconnected value ->
-            ( model, refreshNodes )
+            ( model, doRefresh )
 
         SendMessage node message ->
             ( model, sendMessage node message )
 
         SentMessage value ->
-            ( model, refreshNodes )
+            ( model, doRefresh )
 
         KillNode node ->
             ( model, killNode node )
 
         KilledNode value ->
-            ( model, refreshNodes )
+            ( model, doRefresh )
 
         DataUpdate str ->
             ( dataUpdate model str, Cmd.none )
+
+        ReloadLibrary lib ->
+            ( model, reloadLibrary lib )
+
+        ReloadedLibrary value ->
+            ( model, doRefresh )
 
 
 subscriptions : Model -> Sub Msg
@@ -566,8 +607,8 @@ subscriptions model =
 view : Model -> Html Msg
 view model =
     div []
-        [ button [ onClick Refresh ] [ text "refresh" ]
-        , errorView model
+        [ errorView model
+        , libsView model
         , typesView model
         , nodesView model
         ]

@@ -33,7 +33,7 @@ impl WebApi {
         Ok(())
     }
 
-    fn nodes_json(&self) -> JsonResult {
+    fn state_json(&self) -> JsonResult {
         let nodes = self.inst.nodes.nodes();
         let nodes: Vec<_> = nodes
             .iter()
@@ -99,7 +99,7 @@ impl WebApi {
                     .collect();
                 json!({
                     "id": node.ctl.node().id().0,
-                    "name": node.name,
+                    "type_name": node.type_name,
                     "ports": {
                         "in": in_ports,
                         "out": out_ports,
@@ -109,27 +109,32 @@ impl WebApi {
                 })
             })
             .collect();
-        resp_ok(json!(nodes))
+        let types: Vec<_> = self.inst.types
+            .nodes()
+            .iter()
+            .map(|node| {
+                json!({
+                    "name": node.name
+                })
+            })
+            .collect();
+        let libs: Vec<_> = self.inst.types.libs().iter().map(|lib| {
+            json!({
+                "name": lib.name,
+                "path": lib.path,
+            })
+        }).collect();
+        resp_ok(json!({
+            "nodes": nodes,
+            "types": types,
+            "libs": libs,
+        }))
     }
 }
 
-#[get("/type")]
-fn type_list(this: State<Arc<WebApi>>) -> JsonResult {
-    let types: Vec<_> = this.inst.types
-        .nodes()
-        .iter()
-        .map(|node| {
-            json!({
-                "name": node.name
-            })
-        })
-        .collect();
-    resp_ok(json!(types))
-}
-
-#[get("/node")]
-fn node_list(this: State<Arc<WebApi>>) -> JsonResult {
-    this.nodes_json()
+#[get("/state")]
+fn state_info(this: State<Arc<WebApi>>) -> JsonResult {
+    this.state_json()
 }
 
 fn status_string(node: &NodeInstance) -> &'static str {
@@ -141,14 +146,14 @@ fn status_string(node: &NodeInstance) -> &'static str {
 }
 
 //TODO make this post so names can contain arbitrary characters
-#[get("/type/<name>/new")]
+#[get("/type/new/<name>")]
 fn node_create(this: State<Arc<WebApi>>, name: String) -> JsonResult {
     let desc = this.inst.types.node(&name).ok_or(JsonErr(Json(json!("id out of bounds"))))?;
     let ctl = (desc.new)(this.inst.ctx.clone(), NewNodeConfig { node: None });
     let id = ctl.node().id().0;
     this.inst.nodes.insert(NodeInstance {
         ctl,
-        name: desc.name,
+        type_name: desc.name,
     });
     resp_ok(json!({
         "id": id,
@@ -185,19 +190,7 @@ fn disconnect_port(this: State<Arc<WebApi>>, node_id: usize, port_id: usize) -> 
 }
 #[get("/node/kill/<node_id>")]
 fn set_node_status(this: State<Arc<WebApi>>, node_id: usize) -> JsonResult {
-    let node = this.node(NodeID(node_id))?;
-    node.ctl.stop();
-    node.ctl.node().subscribe();
-    while node.ctl.node().attached() {
-        thread::park(); // TODO: relying on implementation detail
-    }
-    node.ctl.node().unsubscribe();
-    this.inst.ctx
-        .graph()
-        .remove_node(NodeID(node_id))
-        .map_err(|_| JsonErr(Json(json!("couldn't remove node from graph"))))?;
-    this.remove_node(NodeID(node_id))
-        .map_err(|_| JsonErr(Json(json!("couldn't remove node from active node list"))))?;
+    this.inst.kill_node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("couldn't kill node"))))?;
     resp_ok(json!({}))
 }
 
@@ -236,6 +229,12 @@ fn send_message(
     resp_ok(json!({}))
 }
 
+#[post("/type/reload_library", format = "application/json", data = "<path>")]
+fn reload_library(this: State<Arc<WebApi>>, path: Json<String>) -> JsonResult {
+    this.inst.reload_lib(&path);
+    resp_ok(json!({}))
+}
+
 fn run_notifier(api: Arc<WebApi>) {
     thread::spawn(move || {
         let api = api.clone();
@@ -245,12 +244,12 @@ fn run_notifier(api: Arc<WebApi>) {
                 let mut prev_nodes_str = "".into();
                 loop {
                     thread::sleep(Duration::from_millis(100));
-                    let nodes_str =
-                        format!("{}", api.nodes_json().map(|x| (x.0).0).unwrap_or_else(|x| (x.0).0));
-                    if nodes_str != prev_nodes_str {
-                        out.send(nodes_str.clone()).unwrap();
+                    let state_str =
+                        format!("{}", api.state_json().map(|x| (x.0).0).unwrap_or_else(|x| (x.0).0));
+                    if state_str != prev_nodes_str {
+                        out.send(state_str.clone()).unwrap();
                         serialize::to_file("dump.json", &api.inst);
-                        prev_nodes_str = nodes_str;
+                        prev_nodes_str = state_str;
                     }
                 }
             });
@@ -267,13 +266,13 @@ pub fn run_server(inst: Instance) {
         .mount(
             "/",
             routes![
-                type_list,
-                node_list,
+                state_info,
                 node_create,
                 connect_port,
                 disconnect_port,
                 set_node_status,
                 send_message,
+                reload_library,
             ],
         )
         .manage(api)

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 #[derive(Serialize, Deserialize)]
 struct InstanceDesc {
-    name: String,
+    type_name: String,
     id: NodeID,
 }
 #[derive(Serialize, Deserialize)]
@@ -33,12 +33,12 @@ pub fn to_string(inst: &Instance) -> String {
             .iter()
             .map(|node| {
                 InstanceDesc {
-                    name: node.name.into(),
+                    type_name: node.type_name.into(),
                     id: node.ctl.node().id(),
                 }
             })
         .collect(),
-        libs: inst.types.lib_paths().iter().cloned().map(|path| LibraryDesc { path }).collect(),
+        libs: inst.types.libs().iter().map(|lib| LibraryDesc { path: lib.path.clone() }).collect(),
         graph: inst.ctx.graph(),
     };
     serde_json::to_string(&container).unwrap()
@@ -50,13 +50,13 @@ pub fn from_string(serialized: String) -> Instance {
     let types = NodeDescriptors::new();
     let nodes = NodeInstances::new();
     for lib in libs {
-        types.load_library(&lib.path);
+        types.load_library(&lib.path).unwrap();
     }
     for it in inst_desc {
-        let node_desc = types.node(&it.name).expect("node desc not loaded");
+        let node_desc = types.node(&it.type_name).expect("node desc not loaded");
         let node_inst = NodeInstance {
             ctl: (node_desc.new)(ctx.clone(), NewNodeConfig { node: Some(it.id) }),
-            name: node_desc.name,
+            type_name: node_desc.name,
         };
         nodes.insert(node_inst);
     }
