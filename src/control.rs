@@ -61,6 +61,7 @@ impl Instance {
             thread::park(); // TODO: relying on implementation detail
         }
         node.ctl.node().unsubscribe();
+        node.ctl.node().flush()?;
         Ok(node)
     }
 }
