@@ -2,6 +2,7 @@ use std::thread::{self, Thread};
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
+use std::time::Duration;
 use std::fs;
 use modular_flow::graph::*;
 use modular_flow::context::Context;
@@ -58,7 +59,8 @@ impl Instance {
         node.ctl.stop();
         node.ctl.node().subscribe();
         while node.ctl.node().attached() {
-            thread::park(); // TODO: relying on implementation detail
+            node.ctl.node().notify();
+            thread::sleep(Duration::from_millis(25));
         }
         node.ctl.node().unsubscribe();
         node.ctl.node().flush()?;
