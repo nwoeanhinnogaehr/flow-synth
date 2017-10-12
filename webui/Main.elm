@@ -130,6 +130,7 @@ type Msg
     | StartConnecting Node Port
     | DoConnect Node Port Node Port
     | Connected Decode.Value
+    | CancelConnect
     | DoDisconnect Node Port Edge
     | Disconnected Decode.Value
     | SendMessage Node Message
@@ -247,7 +248,10 @@ portView model node port_ =
                             ]
 
                         Connecting state ->
-                            if state.portType /= port_.portType then
+                            if state.node == node && state.port_ == port_ then
+                                [ button [ onClick CancelConnect ] [ text "Cancel" ]
+                                ]
+                            else if state.portType /= port_.portType then
                                 [ (Maybe.withDefault
                                     (button
                                         [ onClick
@@ -577,6 +581,9 @@ update msg model =
 
         Connected value ->
             ( model, doRefresh )
+
+        CancelConnect ->
+            ( { model | mode = Normal }, Cmd.none )
 
         DoDisconnect node port_ edge ->
             ( model, doDisconnect node port_ edge )
