@@ -7,7 +7,9 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Http
 import Task
+import Array exposing (Array)
 import WebSocket
+import Dict exposing (Dict)
 
 
 apiUrl =
@@ -23,6 +25,7 @@ type alias Model =
     , err : Maybe String
     , mode : Mode
     , libPath : String
+    , messageArgs : Dict String String
     }
 
 
@@ -31,6 +34,7 @@ emptyModel =
     , err = Nothing
     , mode = Normal
     , libPath = ""
+    , messageArgs = Dict.empty
     }
 
 
@@ -141,6 +145,7 @@ type Msg
     | LoadLibrary String
     | LoadedLibrary Decode.Value
     | NewLibPath String
+    | SetMessageArg String String
 
 
 emptyGraph =
@@ -215,11 +220,19 @@ messageDescriptorView model node desc =
     li []
         (List.map
             (\arg ->
-                input [ placeholder arg.name ] []
+                input [ placeholder arg.name, onInput (SetMessageArg (messageArgKey node desc arg)) ] []
             )
             desc.args
-            ++ [ button [ onClick (SendMessage node { id = desc.id, args = [] }) ] [ text desc.name ] ]
+            ++ [ button [ onClick (SendMessage node { id = desc.id, args = (List.map (getMessageArg model node desc) desc.args) }) ] [ text desc.name ] ]
         )
+
+
+getMessageArg model node desc arg =
+    Maybe.withDefault "" (Dict.get (messageArgKey node desc arg) model.messageArgs)
+
+
+messageArgKey node desc arg =
+    toString node.id ++ "." ++ toString desc.id ++ "." ++ toString arg.name
 
 
 portView : Model -> Node -> Port -> Html Msg
@@ -614,6 +627,9 @@ update msg model =
 
         NewLibPath path ->
             ( { model | libPath = path }, Cmd.none )
+
+        SetMessageArg key value ->
+            ( { model | messageArgs = Dict.insert key value model.messageArgs }, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
