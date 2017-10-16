@@ -102,15 +102,25 @@ pub struct NewNodeConfig {
     pub node: Option<NodeID>, // node id to attach to
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct NodeDescriptor {
     pub name: String,
-    pub new: fn(Arc<Context>, NewNodeConfig) -> Arc<RemoteControl>,
+    pub new: Arc<Fn(Arc<Context>, NewNodeConfig) -> Arc<RemoteControl> + Send + Sync + 'static>,
+}
+
+impl NodeDescriptor {
+    pub fn new<S: Into<String>, F: Fn(Arc<Context>, NewNodeConfig) -> Arc<RemoteControl> + Send + Sync + 'static>(name: S, new: F) -> NodeDescriptor {
+        NodeDescriptor {
+            name: name.into(),
+            new: Arc::new(new),
+        }
+    }
 }
 
 pub struct NodeDescriptors {
     load_count: AtomicUsize,
     libs: Mutex<Vec<Arc<NodeLibrary>>>,
+    old_libs: Mutex<Vec<Arc<NodeLibrary>>>,
 }
 
 impl NodeDescriptors {
@@ -118,6 +128,7 @@ impl NodeDescriptors {
         NodeDescriptors {
             load_count: AtomicUsize::new(0),
             libs: Mutex::new(vec![]),
+            old_libs: Mutex::new(vec![]),
         }
     }
     pub fn libs(&self) -> Vec<Arc<NodeLibrary>> {
@@ -126,13 +137,14 @@ impl NodeDescriptors {
     /// Replaces existing library with the same path if it exists
     pub fn load_library(&self, path: &str) -> plugin_loader::Result<Arc<NodeLibrary>> {
         let mut libs = self.libs.lock().unwrap();
-        if let Some(old_lib_idx) = libs.iter_mut().position(|lib| lib.path == path) {
-            let old_lib = libs.swap_remove(old_lib_idx);
-            fs::remove_file(&old_lib.file_path).unwrap();
-        }
         let new_path = path.to_string() + &usize::to_string(&self.load_count.fetch_add(1, Ordering::SeqCst));
         fs::copy(path, &new_path).unwrap();
         let new_lib = Arc::new(NodeLibrary::load(path, &new_path)?);
+        if let Some(old_lib_idx) = libs.iter_mut().position(|lib| lib.path == path) {
+            let old_lib = libs.swap_remove(old_lib_idx);
+            self.old_libs.lock().unwrap().push(old_lib);
+            //fs::remove_file(&old_lib.file_path).unwrap();
+        }
         libs.push(new_lib.clone());
         Ok(new_lib)
     }

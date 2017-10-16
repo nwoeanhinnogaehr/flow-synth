@@ -2,7 +2,6 @@ use control::*;
 use libloading::{Library, Symbol};
 pub use libloading::Result;
 
-#[derive(Debug)]
 pub struct NodeLibrary {
     lib: Library,
     pub nodes: Vec<NodeDescriptor>,
