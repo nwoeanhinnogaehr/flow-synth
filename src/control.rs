@@ -29,7 +29,9 @@ impl Instance {
             if let Some(old_lib) = old_lib {
                 for node in self.nodes.nodes() {
                     if old_lib.nodes.iter().find(|desc| desc.name == node.type_name).is_some() {
+                        println!("try stop {} {:?}", node.type_name, node.ctl.node().id());
                         self.stop_node(node.ctl.node().id()).unwrap();
+                        println!("stopped {} {:?}", node.type_name, node.ctl.node().id());
                     }
                 }
             }
@@ -57,13 +59,11 @@ impl Instance {
     pub fn stop_node(&self, id: NodeID) -> Result<Arc<NodeInstance>> {
         let node = self.nodes.node(id).ok_or(Error::InvalidNode)?;
         node.ctl.stop();
-        node.ctl.node().subscribe();
         while node.ctl.node().attached() {
-            node.ctl.node().notify();
+            node.ctl.node().notify(&*self.ctx.graph());
             thread::sleep(Duration::from_millis(25));
         }
-        node.ctl.node().unsubscribe();
-        node.ctl.node().flush()?;
+        node.ctl.node().flush(&*self.ctx.graph())?;
         Ok(node)
     }
 }
@@ -212,8 +212,8 @@ impl RemoteControl {
     }
     pub fn send_message(&self, msg: message::Message) {
         self.msg_queue.lock().unwrap().push_back(msg);
-        self.node.set_aborting(true);
-        self.node.notify();
+        self.node.set_aborting(true, self.ctx.graph());
+        self.node.notify(self.ctx.graph());
     }
     pub fn recv_message(&self) -> Option<message::Message> {
         self.msg_queue.lock().unwrap().pop_front()
@@ -226,7 +226,7 @@ impl RemoteControl {
         }
     }
     pub fn stop(&self) {
-        self.node.set_aborting(true);
+        self.node.set_aborting(true, &*self.ctx.graph());
         self.stopped.store(true, Ordering::Release);
         self.stop_thread.lock().unwrap().as_ref().map(|thread| thread.unpark());
     }
