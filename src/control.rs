@@ -29,9 +29,7 @@ impl Instance {
             if let Some(old_lib) = old_lib {
                 for node in self.nodes.nodes() {
                     if old_lib.nodes.iter().find(|desc| desc.name == node.type_name).is_some() {
-                        println!("try stop {} {:?}", node.type_name, node.ctl.node().id());
                         self.stop_node(node.ctl.node().id()).unwrap();
-                        println!("stopped {} {:?}", node.type_name, node.ctl.node().id());
                     }
                 }
             }
@@ -58,12 +56,14 @@ impl Instance {
     }
     pub fn stop_node(&self, id: NodeID) -> Result<Arc<NodeInstance>> {
         let node = self.nodes.node(id).ok_or(Error::InvalidNode)?;
+        println!("trying to stop {} [{}]", node.type_name, node.ctl.node().id().0);
         node.ctl.stop();
         while node.ctl.node().attached() {
-            node.ctl.node().notify(&*self.ctx.graph());
+            node.ctl.node().notify_self();
             thread::sleep(Duration::from_millis(25));
         }
         node.ctl.node().flush(&*self.ctx.graph())?;
+        println!("stopped {} [{}]", node.type_name, node.ctl.node().id().0);
         Ok(node)
     }
 }
