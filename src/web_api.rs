@@ -218,10 +218,9 @@ fn send_message(
         .map(|(arg, desc)| {
             Ok(match desc.ty {
                 Type::Bool => Value::Bool(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
-                Type::Int => Value::Int(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
                 Type::Usize => Value::Usize(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
-                Type::Float => {
-                    Value::Float(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?)
+                Type::F32 => {
+                    Value::F32(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?)
                 }
                 Type::String => Value::String(arg.clone()),
             })

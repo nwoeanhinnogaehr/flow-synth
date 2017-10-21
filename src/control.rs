@@ -177,17 +177,15 @@ pub mod message {
     #[derive(Clone, Debug)]
     pub enum Type {
         Bool,
-        Int,
         Usize,
-        Float,
+        F32,
         String,
     }
     #[derive(Clone, Debug)]
     pub enum Value {
         Bool(bool),
-        Int(i64),
         Usize(usize),
-        Float(f64),
+        F32(f32),
         String(String),
     }
     #[derive(Clone, Debug)]
