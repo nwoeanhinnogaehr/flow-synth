@@ -193,6 +193,11 @@ fn set_node_status(this: State<Arc<WebApi>>, node_id: usize) -> JsonResult {
     this.inst.kill_node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("couldn't kill node"))))?;
     resp_ok(json!({}))
 }
+#[get("/node/reload/<node_id>")]
+fn reload_node(this: State<Arc<WebApi>>, node_id: usize) -> JsonResult {
+    this.inst.reload_node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("couldn't reload node"))))?;
+    resp_ok(json!({}))
+}
 
 #[post("/node/send_message/<node_id>/<message_id>", format = "application/json", data = "<args>")]
 fn send_message(
@@ -214,6 +219,7 @@ fn send_message(
             Ok(match desc.ty {
                 Type::Bool => Value::Bool(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
                 Type::Int => Value::Int(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
+                Type::Usize => Value::Usize(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
                 Type::Float => {
                     Value::Float(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?)
                 }
@@ -271,6 +277,7 @@ pub fn run_server(inst: Instance) {
                 connect_port,
                 disconnect_port,
                 set_node_status,
+                reload_node,
                 send_message,
                 load_library,
             ],

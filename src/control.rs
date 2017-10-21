@@ -46,6 +46,23 @@ impl Instance {
             }
         }
     }
+    pub fn reload_node(&self, id: NodeID) -> Result<()> {
+        let node = self.nodes.node(id).ok_or(Error::InvalidNode)?;
+        let libs = self.types.libs();
+        let old_lib = libs.iter().find(|lib| {
+            lib.nodes.iter().find(|ty| ty.name == node.type_name).is_some()
+        }).unwrap();
+        self.stop_node(node.ctl.node().id())?;
+        let lib = self.types.load_library(&old_lib.path).unwrap();
+        let node_desc = lib.nodes.iter().find(|desc| desc.name == node.type_name).unwrap();
+        self.nodes.remove(node.ctl.node().id());
+        let ctl = (node_desc.new)(self.ctx.clone(), NewNodeConfig { node: Some(node.ctl.node().id()) });
+        self.nodes.insert(NodeInstance {
+            ctl,
+            type_name: node.type_name.clone(),
+        });
+        Ok(())
+    }
     pub fn kill_node(&self, id: NodeID) -> Result<()> {
         self.stop_node(id)?;
         self.ctx
@@ -62,7 +79,7 @@ impl Instance {
             node.ctl.node().notify_self();
             thread::sleep(Duration::from_millis(25));
         }
-        node.ctl.node().flush(&*self.ctx.graph())?;
+        node.ctl.node().flush(self.ctx.graph());
         println!("stopped {} [{}]", node.type_name, node.ctl.node().id().0);
         Ok(node)
     }
@@ -161,6 +178,7 @@ pub mod message {
     pub enum Type {
         Bool,
         Int,
+        Usize,
         Float,
         String,
     }
@@ -168,6 +186,7 @@ pub mod message {
     pub enum Value {
         Bool(bool),
         Int(i64),
+        Usize(usize),
         Float(f64),
         String(String),
     }
@@ -212,8 +231,7 @@ impl RemoteControl {
     }
     pub fn send_message(&self, msg: message::Message) {
         self.msg_queue.lock().unwrap().push_back(msg);
-        self.node.set_aborting(true, self.ctx.graph());
-        self.node.notify(self.ctx.graph());
+        self.node.set_aborting(true);
     }
     pub fn recv_message(&self) -> Option<message::Message> {
         self.msg_queue.lock().unwrap().pop_front()
@@ -226,8 +244,8 @@ impl RemoteControl {
         }
     }
     pub fn stop(&self) {
-        self.node.set_aborting(true, &*self.ctx.graph());
         self.stopped.store(true, Ordering::Release);
+        self.node.set_aborting(true);
         self.stop_thread.lock().unwrap().as_ref().map(|thread| thread.unpark());
     }
     pub fn stopped(&self) -> bool {

@@ -141,6 +141,8 @@ type Msg
     | SentMessage Decode.Value
     | KillNode Node
     | KilledNode Decode.Value
+    | ReloadNode Node
+    | ReloadedNode Decode.Value
     | DataUpdate String
     | LoadLibrary String
     | LoadedLibrary Decode.Value
@@ -205,7 +207,8 @@ nodeView model node =
     li []
         [ div []
             [ button [ onClick (KillNode node) ] [ text "Kill" ]
-            , b [] [ text node.type_name ]
+            , button [ onClick (ReloadNode node) ] [ text "Reload" ]
+            , b [] [ text (node.type_name ++ " [" ++ toString node.id ++ "]") ]
             , ul [] (List.map (messageDescriptorView model node) node.messageDescriptors)
             , text "Inputs:"
             , ol [] (List.map (portView model node) node.ports.input)
@@ -534,6 +537,13 @@ killNode node =
         KilledNode
 
 
+reloadNode node =
+    httpGet
+        ("node/reload/" ++ toString node.id)
+        Decode.value
+        ReloadedNode
+
+
 loadLibrary path =
     httpPost
         "type/load_library/"
@@ -614,6 +624,12 @@ update msg model =
             ( model, killNode node )
 
         KilledNode value ->
+            ( model, doRefresh )
+
+        ReloadNode node ->
+            ( model, reloadNode node )
+
+        ReloadedNode value ->
             ( model, doRefresh )
 
         DataUpdate str ->
