@@ -106,6 +106,7 @@ impl WebApi {
                     },
                     "status": status_string(node),
                     "message_descriptors": message_descriptors,
+                    "data": node.ctl.saved_data(),
                 })
             })
             .collect();
