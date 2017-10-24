@@ -19,12 +19,12 @@ where
     let node = ctx.graph().node(node_id).unwrap();
     let node_ctx = ctx.node_ctx(node_id).unwrap();
     let remote_ctl = Arc::new(RemoteControl::new(ctx, node, messages));
+    remote_ctl.set_saved_data(&cfg.saved_data);
 
     let ctl = remote_ctl.clone();
     thread::spawn(move || while !ctl.stopped() {
         match loop_fn(&node_ctx, &ctl) {
             Err(e) => {
-                println!("simple err {:?}", e);
             }
             _ => {} // TODO
         }

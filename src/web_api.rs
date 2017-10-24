@@ -149,7 +149,7 @@ fn status_string(node: &NodeInstance) -> &'static str {
 #[get("/type/new/<name>")]
 fn node_create(this: State<Arc<WebApi>>, name: String) -> JsonResult {
     let desc = this.inst.types.node(&name).ok_or(JsonErr(Json(json!("id out of bounds"))))?;
-    let ctl = (desc.new)(this.inst.ctx.clone(), NewNodeConfig { node: None });
+    let ctl = (desc.new)(this.inst.ctx.clone(), NewNodeConfig::empty());
     let id = ctl.node().id().0;
     this.inst.nodes.insert(NodeInstance {
         ctl,

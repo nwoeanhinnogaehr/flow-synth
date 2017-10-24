@@ -7,6 +7,9 @@ use std::fs;
 use modular_flow::graph::*;
 use modular_flow::context::Context;
 use plugin_loader::{self, NodeLibrary};
+use serde_json;
+use serde::ser::Serialize;
+use serde::de::DeserializeOwned;
 
 pub struct Instance {
     pub ctx: Arc<Context>,
@@ -38,7 +41,7 @@ impl Instance {
         for node in self.nodes.nodes() {
             if let Some(node_desc) = lib.nodes.iter().find(|desc| desc.name == node.type_name) {
                 self.nodes.remove(node.ctl.node().id());
-                let ctl = (node_desc.new)(self.ctx.clone(), NewNodeConfig { node: Some(node.ctl.node().id()) });
+                let ctl = (node_desc.new)(self.ctx.clone(), NewNodeConfig::from(node.ctl.node().id(), node.ctl.saved_data()));
                 self.nodes.insert(NodeInstance {
                     ctl,
                     type_name: node.type_name.clone(),
@@ -56,7 +59,7 @@ impl Instance {
         let lib = self.types.load_library(&old_lib.path).unwrap();
         let node_desc = lib.nodes.iter().find(|desc| desc.name == node.type_name).unwrap();
         self.nodes.remove(node.ctl.node().id());
-        let ctl = (node_desc.new)(self.ctx.clone(), NewNodeConfig { node: Some(node.ctl.node().id()) });
+        let ctl = (node_desc.new)(self.ctx.clone(), NewNodeConfig::from(node.ctl.node().id(), node.ctl.saved_data()));
         self.nodes.insert(NodeInstance {
             ctl,
             type_name: node.type_name.clone(),
@@ -117,6 +120,22 @@ impl NodeInstances {
 
 pub struct NewNodeConfig {
     pub node: Option<NodeID>, // node id to attach to
+    pub saved_data: String,
+}
+
+impl NewNodeConfig {
+    pub fn empty() -> NewNodeConfig {
+        NewNodeConfig {
+            node: None,
+            saved_data: "".into(),
+        }
+    }
+    pub fn from(node: NodeID, saved_data: String) -> NewNodeConfig {
+        NewNodeConfig {
+            node: Some(node),
+            saved_data: saved_data,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -212,6 +231,7 @@ pub struct RemoteControl {
     stopped: AtomicBool,
     messages: Vec<message::Desc>,
     msg_queue: Mutex<VecDeque<message::Message>>,
+    saved_data: Mutex<String>,
 }
 impl RemoteControl {
     pub fn new(ctx: Arc<Context>, node: Arc<Node>, messages: Vec<message::Desc>) -> RemoteControl {
@@ -222,6 +242,7 @@ impl RemoteControl {
             stopped: AtomicBool::new(false),
             messages,
             msg_queue: Mutex::new(VecDeque::new()),
+            saved_data: Mutex::new("".into()),
         }
     }
     pub fn message_descriptors(&self) -> &[message::Desc] {
@@ -254,5 +275,18 @@ impl RemoteControl {
     }
     pub fn context(&self) -> Arc<Context> {
         self.ctx.clone()
+    }
+    pub fn save<T: Serialize>(&self, val: T) -> ::std::result::Result<(), serde_json::Error> {
+        *self.saved_data.lock().unwrap() = serde_json::to_string(&val)?;
+        Ok(())
+    }
+    pub fn restore<T: DeserializeOwned>(&self) -> ::std::result::Result<T, serde_json::Error> {
+        serde_json::from_str(&self.saved_data.lock().unwrap())
+    }
+    pub fn saved_data(&self) -> String {
+        self.saved_data.lock().unwrap().clone()
+    }
+    pub fn set_saved_data(&self, data: &str) {
+        *self.saved_data.lock().unwrap() = data.into();
     }
 }

@@ -9,6 +9,7 @@ use std::sync::Arc;
 #[derive(Serialize, Deserialize)]
 struct InstanceDesc {
     type_name: String,
+    saved_data: String,
     id: NodeID,
 }
 #[derive(Serialize, Deserialize)]
@@ -35,6 +36,7 @@ pub fn to_string(inst: &Instance) -> String {
                 InstanceDesc {
                     type_name: node.type_name.clone(),
                     id: node.ctl.node().id(),
+                    saved_data: node.ctl.saved_data().into(),
                 }
             })
         .collect(),
@@ -55,7 +57,7 @@ pub fn from_string(serialized: String) -> Instance {
     for it in inst_desc {
         let node_desc = types.node(&it.type_name).expect("node desc not loaded");
         let node_inst = NodeInstance {
-            ctl: (node_desc.new)(ctx.clone(), NewNodeConfig { node: Some(it.id) }),
+            ctl: (node_desc.new)(ctx.clone(), NewNodeConfig { node: Some(it.id), saved_data: it.saved_data }),
             type_name: node_desc.name,
         };
         nodes.insert(node_inst);
