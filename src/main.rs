@@ -4,6 +4,7 @@
 #![feature(fnbox)]
 #![plugin(rocket_codegen)]
 #![feature(const_fn)]
+#![feature(libc)]
 
 extern crate libloading;
 extern crate modular_flow;
@@ -16,6 +17,7 @@ extern crate serde;
 extern crate serde_derive;
 extern crate serde_json;
 extern crate ws;
+extern crate libc;
 
 mod web_api;
 mod control;

@@ -10,6 +10,7 @@ use plugin_loader::{self, NodeLibrary};
 use serde_json;
 use serde::ser::Serialize;
 use serde::de::DeserializeOwned;
+use libc;
 
 pub struct Instance {
     pub ctx: Arc<Context>,
@@ -173,7 +174,7 @@ impl NodeDescriptors {
     /// Replaces existing library with the same path if it exists
     pub fn load_library(&self, path: &str) -> plugin_loader::Result<Arc<NodeLibrary>> {
         let mut libs = self.libs.lock().unwrap();
-        let new_path = path.to_string() + &usize::to_string(&self.load_count.fetch_add(1, Ordering::SeqCst));
+        let new_path = format!("{}{}-{}", path, self.load_count.fetch_add(1, Ordering::SeqCst), unsafe { libc::getpid() });
         fs::copy(path, &new_path).unwrap();
         let new_lib = Arc::new(NodeLibrary::load(path, &new_path)?);
         if let Some(old_lib_idx) = libs.iter_mut().position(|lib| lib.path == path) {

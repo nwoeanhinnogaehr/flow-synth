@@ -13,6 +13,7 @@ libloading = "*"
 ws = "*"
 serde_json = "*"
 serde_derive = "*"
+libc = "*"
 
 [dependencies.serde]
 version = "*"

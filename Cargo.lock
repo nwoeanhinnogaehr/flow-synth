@@ -2,6 +2,7 @@
 name = "flow-synth"
 version = "0.1.0"
 dependencies = [
+ "libc 0.2.32 (registry+https://github.com/rust-lang/crates.io-index)",
  "libloading 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "modular-flow 0.0.1",
  "rocket 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
