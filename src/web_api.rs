@@ -7,6 +7,7 @@ use rocket_contrib::{Json, Value};
 use rocket::{Request, Response, State};
 use rocket::http::Status;
 use rocket::response::Responder;
+use rocket::config::{Config, Environment};
 use rocket_cors;
 use control::*;
 use serialize;
@@ -241,10 +242,10 @@ fn load_library(this: State<Arc<WebApi>>, path: Json<String>) -> JsonResult {
     resp_ok(json!({}))
 }
 
-fn run_notifier(api: Arc<WebApi>) {
+fn run_notifier(api: Arc<WebApi>, id: usize) {
     thread::spawn(move || {
         let api = api.clone();
-        listen("127.0.0.1:3012", move |out| {
+        listen(&format!("127.0.0.1:{}", 3000+id), move |out| {
             let api = api.clone();
             thread::spawn(move || {
                 let mut prev_nodes_str = "".into();
@@ -264,11 +265,16 @@ fn run_notifier(api: Arc<WebApi>) {
     });
 }
 
-pub fn run_server(inst: Instance) {
+pub fn run_server(inst: Instance, id: usize) {
     let api = Arc::new(WebApi::new(inst));
-    run_notifier(api.clone());
+    run_notifier(api.clone(), id);
     let options = rocket_cors::Cors::default();
-    rocket::ignite()
+    let config = Config::build(Environment::Development)
+        .address("127.0.0.1")
+        .port(8008+id as u16)
+        .finalize()
+        .unwrap();
+    rocket::custom(config, true)
         .mount(
             "/",
             routes![

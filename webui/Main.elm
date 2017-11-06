@@ -12,11 +12,6 @@ import WebSocket
 import Dict exposing (Dict)
 
 
-apiUrl =
-    "http://localhost:8008/"
-
-
-
 -- DATA --
 
 
@@ -26,6 +21,8 @@ type alias Model =
     , mode : Mode
     , libPath : String
     , messageArgs : Dict String String
+    , id : Int
+    , apiUrl : String
     }
 
 
@@ -35,6 +32,8 @@ emptyModel =
     , mode = Normal
     , libPath = ""
     , messageArgs = Dict.empty
+    , id = 0
+    , apiUrl = "http://localhost:8008/"
     }
 
 
@@ -148,6 +147,7 @@ type Msg
     | LoadedLibrary Decode.Value
     | NewLibPath String
     | SetMessageArg String String
+    | SetId String
 
 
 emptyGraph =
@@ -159,6 +159,14 @@ emptyGraph =
 
 
 -- VIEW --
+
+
+connectView : Model -> Html Msg
+connectView model =
+    div []
+        [ text "instance id:"
+        , input [ placeholder "id", onInput SetId ] [ text "0" ]
+        ]
 
 
 libsView : Model -> Html Msg
@@ -401,10 +409,10 @@ decodeWrapper msg decoder =
         (Decode.field "status" Decode.string)
 
 
-httpGet path decoder msg =
+httpGet model path decoder msg =
     let
         url =
-            apiUrl ++ path
+            model.apiUrl ++ path
 
         request =
             Http.get url (decodeWrapper msg decoder)
@@ -412,10 +420,10 @@ httpGet path decoder msg =
         Http.send ResponseWrapper request
 
 
-httpPost path body decoder msg =
+httpPost model path body decoder msg =
     let
         url =
-            apiUrl ++ path
+            model.apiUrl ++ path
 
         request =
             Http.post url (Http.jsonBody body) (decodeWrapper msg decoder)
@@ -427,9 +435,10 @@ httpPost path body decoder msg =
 -- ADD NODE --
 
 
-addNode : NodeType -> Cmd Msg
-addNode nodeType =
+addNode : Model -> NodeType -> Cmd Msg
+addNode model nodeType =
     httpGet
+        model
         ("type/new/" ++ nodeType.name)
         decodeAddNode
         AddedNode
@@ -439,9 +448,10 @@ addNode nodeType =
 -- REFRESH --
 
 
-doRefresh : Cmd Msg
-doRefresh =
+doRefresh : Model -> Cmd Msg
+doRefresh model =
     httpGet
+        model
         "state"
         decodeGraph
         Refreshed
@@ -465,9 +475,10 @@ dataUpdate model updateStr =
 -- CONNECT --
 
 
-doConnect : Node -> Port -> Node -> Port -> Cmd Msg
-doConnect srcNode srcPort dstNode dstPort =
+doConnect : Model -> Node -> Port -> Node -> Port -> Cmd Msg
+doConnect model srcNode srcPort dstNode dstPort =
     httpGet
+        model
         ("node/connect/"
             ++ toString srcNode.id
             ++ "/"
@@ -494,8 +505,8 @@ portIsConnected port_ =
     port_.edge /= Nothing
 
 
-doDisconnect : Node -> Port -> Edge -> Cmd Msg
-doDisconnect node port_ edge =
+doDisconnect : Model -> Node -> Port -> Edge -> Cmd Msg
+doDisconnect model node port_ edge =
     let
         ( endpointNode, endPointPort ) =
             case port_.portType of
@@ -511,7 +522,7 @@ doDisconnect node port_ edge =
                 ++ "/"
                 ++ toString endPointPort
     in
-        httpGet url decodeDisconnect Disconnected
+        httpGet model url decodeDisconnect Disconnected
 
 
 decodeDisconnect =
@@ -522,30 +533,34 @@ decodeDisconnect =
 -- MESSAGES --
 
 
-sendMessage node msg =
+sendMessage model node msg =
     httpPost
+        model
         ("node/send_message/" ++ toString node.id ++ "/" ++ toString msg.id)
         (Encode.list (List.map Encode.string msg.args))
         Decode.value
         SentMessage
 
 
-killNode node =
+killNode model node =
     httpGet
+        model
         ("node/kill/" ++ toString node.id)
         Decode.value
         KilledNode
 
 
-reloadNode node =
+reloadNode model node =
     httpGet
+        model
         ("node/reload/" ++ toString node.id)
         Decode.value
         ReloadedNode
 
 
-loadLibrary path =
+loadLibrary model path =
     httpPost
+        model
         "type/load_library/"
         (Encode.string path)
         Decode.value
@@ -565,10 +580,14 @@ raiseError model err =
 -- SPECIAL FUNCTIONS --
 
 
+setId model id =
+    { model | id = id, apiUrl = "http://localhost:" ++ toString (8008 + id) ++ "/" }
+
+
 init : ( Model, Cmd Msg )
 init =
     ( emptyModel
-    , doRefresh
+    , doRefresh emptyModel
     )
 
 
@@ -585,61 +604,61 @@ update msg model =
             ( raiseError model ("Server errored: " ++ toString err), Cmd.none )
 
         Refresh ->
-            ( model, doRefresh )
+            ( model, doRefresh model )
 
         Refreshed newGraph ->
             ( { model | graph = newGraph }, Cmd.none )
 
         AddNode nodeType ->
-            ( model, addNode nodeType )
+            ( model, addNode model nodeType )
 
         AddedNode nodeId ->
-            ( model, doRefresh )
+            ( model, doRefresh model )
 
         StartConnecting node port_ ->
             ( { model | mode = Connecting { node = node, port_ = port_, portType = port_.portType } }, Cmd.none )
 
         DoConnect srcNode srcPort dstNode dstPort ->
-            ( { model | mode = Normal }, doConnect srcNode srcPort dstNode dstPort )
+            ( { model | mode = Normal }, doConnect model srcNode srcPort dstNode dstPort )
 
         Connected value ->
-            ( model, doRefresh )
+            ( model, doRefresh model )
 
         CancelConnect ->
             ( { model | mode = Normal }, Cmd.none )
 
         DoDisconnect node port_ edge ->
-            ( model, doDisconnect node port_ edge )
+            ( model, doDisconnect model node port_ edge )
 
         Disconnected value ->
-            ( model, doRefresh )
+            ( model, doRefresh model )
 
         SendMessage node message ->
-            ( model, sendMessage node message )
+            ( model, sendMessage model node message )
 
         SentMessage value ->
-            ( model, doRefresh )
+            ( model, doRefresh model )
 
         KillNode node ->
-            ( model, killNode node )
+            ( model, killNode model node )
 
         KilledNode value ->
-            ( model, doRefresh )
+            ( model, doRefresh model )
 
         ReloadNode node ->
-            ( model, reloadNode node )
+            ( model, reloadNode model node )
 
         ReloadedNode value ->
-            ( model, doRefresh )
+            ( model, doRefresh model )
 
         DataUpdate str ->
             ( dataUpdate model str, Cmd.none )
 
         LoadLibrary lib ->
-            ( model, loadLibrary lib )
+            ( model, loadLibrary model lib )
 
         LoadedLibrary value ->
-            ( model, doRefresh )
+            ( model, doRefresh model )
 
         NewLibPath path ->
             ( { model | libPath = path }, Cmd.none )
@@ -647,16 +666,20 @@ update msg model =
         SetMessageArg key value ->
             ( { model | messageArgs = Dict.insert key value model.messageArgs }, Cmd.none )
 
+        SetId id ->
+            ( setId model (Result.withDefault 0 (String.toInt id)), Cmd.none )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    WebSocket.listen "ws://localhost:3012" DataUpdate
+    WebSocket.listen ("ws://localhost:" ++ toString (3000 + model.id)) DataUpdate
 
 
 view : Model -> Html Msg
 view model =
     div []
-        [ errorView model
+        [ connectView model
+        , errorView model
         , libsView model
         , typesView model
         , nodesView model
