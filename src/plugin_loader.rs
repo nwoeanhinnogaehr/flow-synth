@@ -30,7 +30,13 @@ impl NodeLibrary {
                 func()
             };
             println!("loaded library {:?} from {}", name, file_path);
-            Ok(NodeLibrary { lib, nodes, name, path: path.into(), file_path: file_path.into() })
+            Ok(NodeLibrary {
+                lib,
+                nodes,
+                name,
+                path: path.into(),
+                file_path: file_path.into(),
+            })
         }
     }
 }

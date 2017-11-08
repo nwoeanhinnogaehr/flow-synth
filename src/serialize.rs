@@ -1,6 +1,6 @@
 use modular_flow::context::Context;
 use modular_flow::graph::*;
-use control::{Instance, NewNodeConfig, NodeInstance, NodeInstances, NodeDescriptors};
+use control::{Instance, NewNodeConfig, NodeDescriptors, NodeInstance, NodeInstances};
 use serde_json;
 use std::io::{Read, Write};
 use std::fs::File;
@@ -30,7 +30,8 @@ struct OwningContainer {
 }
 pub fn to_string(inst: &Instance) -> String {
     let container = Container {
-        inst_desc: inst.nodes.nodes()
+        inst_desc: inst.nodes
+            .nodes()
             .iter()
             .map(|node| {
                 InstanceDesc {
@@ -39,15 +40,27 @@ pub fn to_string(inst: &Instance) -> String {
                     saved_data: node.ctl.saved_data().into(),
                 }
             })
-        .collect(),
-        libs: inst.types.libs().iter().map(|lib| LibraryDesc { path: lib.path.clone() }).collect(),
+            .collect(),
+        libs: inst.types
+            .libs()
+            .iter()
+            .map(|lib| {
+                LibraryDesc {
+                    path: lib.path.clone(),
+                }
+            })
+            .collect(),
         graph: inst.ctx.graph(),
     };
     serde_json::to_string(&container).unwrap()
 }
 pub fn from_string(serialized: String) -> Instance {
     let container: OwningContainer = serde_json::from_str(&serialized).unwrap();
-    let OwningContainer { inst_desc, libs, graph } = container;
+    let OwningContainer {
+        inst_desc,
+        libs,
+        graph,
+    } = container;
     let ctx = Arc::new(Context::new(graph));
     let types = NodeDescriptors::new();
     let nodes = NodeInstances::new();
@@ -57,16 +70,18 @@ pub fn from_string(serialized: String) -> Instance {
     for it in inst_desc {
         let node_desc = types.node(&it.type_name).expect("node desc not loaded");
         let node_inst = NodeInstance {
-            ctl: (node_desc.new)(ctx.clone(), NewNodeConfig { node: Some(it.id), saved_data: it.saved_data }),
+            ctl: (node_desc.new)(
+                ctx.clone(),
+                NewNodeConfig {
+                    node: Some(it.id),
+                    saved_data: it.saved_data,
+                },
+            ),
             type_name: node_desc.name,
         };
         nodes.insert(node_inst);
     }
-    Instance {
-        ctx,
-        nodes,
-        types,
-    }
+    Instance { ctx, nodes, types }
 }
 pub fn to_file(name: &str, inst: &Instance) {
     let mut file = File::create(name).unwrap();

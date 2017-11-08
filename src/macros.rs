@@ -14,8 +14,7 @@ pub fn simple_node<F>(
 where
     F: FnMut(&NodeContext, &Arc<RemoteControl>) -> Result<()> + Send + 'static,
 {
-    let node_id = cfg.node
-        .unwrap_or_else(|| ctx.graph().add_node(nports.0, nports.1));
+    let node_id = cfg.node.unwrap_or_else(|| ctx.graph().add_node(nports.0, nports.1));
     let node = ctx.graph().node(node_id).unwrap();
     let node_ctx = ctx.node_ctx(node_id).unwrap();
     let remote_ctl = Arc::new(RemoteControl::new(ctx, node, messages));
@@ -24,8 +23,7 @@ where
     let ctl = remote_ctl.clone();
     thread::spawn(move || while !ctl.stopped() {
         match loop_fn(&node_ctx, &ctl) {
-            Err(e) => {
-            }
+            Err(e) => {}
             _ => {} // TODO
         }
     });

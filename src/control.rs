@@ -1,5 +1,5 @@
 use std::thread::{self, Thread};
-use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -42,7 +42,10 @@ impl Instance {
         for node in self.nodes.nodes() {
             if let Some(node_desc) = lib.nodes.iter().find(|desc| desc.name == node.type_name) {
                 self.nodes.remove(node.ctl.node().id());
-                let ctl = (node_desc.new)(self.ctx.clone(), NewNodeConfig::from(node.ctl.node().id(), node.ctl.saved_data()));
+                let ctl = (node_desc.new)(
+                    self.ctx.clone(),
+                    NewNodeConfig::from(node.ctl.node().id(), node.ctl.saved_data()),
+                );
                 self.nodes.insert(NodeInstance {
                     ctl,
                     type_name: node.type_name.clone(),
@@ -53,14 +56,16 @@ impl Instance {
     pub fn reload_node(&self, id: NodeID) -> Result<()> {
         let node = self.nodes.node(id).ok_or(Error::InvalidNode)?;
         let libs = self.types.libs();
-        let old_lib = libs.iter().find(|lib| {
-            lib.nodes.iter().find(|ty| ty.name == node.type_name).is_some()
-        }).unwrap();
+        let old_lib =
+            libs.iter().find(|lib| lib.nodes.iter().find(|ty| ty.name == node.type_name).is_some()).unwrap();
         self.stop_node(node.ctl.node().id())?;
         let lib = self.types.load_library(&old_lib.path).unwrap();
         let node_desc = lib.nodes.iter().find(|desc| desc.name == node.type_name).unwrap();
         self.nodes.remove(node.ctl.node().id());
-        let ctl = (node_desc.new)(self.ctx.clone(), NewNodeConfig::from(node.ctl.node().id(), node.ctl.saved_data()));
+        let ctl = (node_desc.new)(
+            self.ctx.clone(),
+            NewNodeConfig::from(node.ctl.node().id(), node.ctl.saved_data()),
+        );
         self.nodes.insert(NodeInstance {
             ctl,
             type_name: node.type_name.clone(),
@@ -69,9 +74,7 @@ impl Instance {
     }
     pub fn kill_node(&self, id: NodeID) -> Result<()> {
         self.stop_node(id)?;
-        self.ctx
-            .graph()
-            .remove_node(id)?;
+        self.ctx.graph().remove_node(id)?;
         self.nodes.remove(id);
         Ok(())
     }
@@ -146,7 +149,13 @@ pub struct NodeDescriptor {
 }
 
 impl NodeDescriptor {
-    pub fn new<S: Into<String>, F: Fn(Arc<Context>, NewNodeConfig) -> Arc<RemoteControl> + Send + Sync + 'static>(name: S, new: F) -> NodeDescriptor {
+    pub fn new<
+        S: Into<String>,
+        F: Fn(Arc<Context>, NewNodeConfig) -> Arc<RemoteControl> + Send + Sync + 'static,
+    >(
+        name: S,
+        new: F,
+    ) -> NodeDescriptor {
         NodeDescriptor {
             name: name.into(),
             new: Arc::new(new),
@@ -174,7 +183,12 @@ impl NodeDescriptors {
     /// Replaces existing library with the same path if it exists
     pub fn load_library(&self, path: &str) -> plugin_loader::Result<Arc<NodeLibrary>> {
         let mut libs = self.libs.lock().unwrap();
-        let new_path = format!("{}{}-{}", path, self.load_count.fetch_add(1, Ordering::SeqCst), unsafe { libc::getpid() });
+        let new_path = format!(
+            "{}{}-{}",
+            path,
+            self.load_count.fetch_add(1, Ordering::SeqCst),
+            unsafe { libc::getpid() }
+        );
         fs::copy(path, &new_path).unwrap();
         let new_lib = Arc::new(NodeLibrary::load(path, &new_path)?);
         if let Some(old_lib_idx) = libs.iter_mut().position(|lib| lib.path == path) {

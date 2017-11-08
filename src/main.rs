@@ -6,6 +6,7 @@
 #![feature(const_fn)]
 #![feature(libc)]
 
+extern crate libc;
 extern crate libloading;
 extern crate modular_flow;
 extern crate rocket;
@@ -17,7 +18,6 @@ extern crate serde;
 extern crate serde_derive;
 extern crate serde_json;
 extern crate ws;
-extern crate libc;
 
 mod web_api;
 mod control;
@@ -30,9 +30,8 @@ use std::thread;
 fn main() {
     let inst = env::args().nth(1).map(|name| serialize::from_file(&name)).unwrap_or(control::Instance::new());
     let id = env::args().nth(2).map(|id| id.parse().unwrap()).unwrap_or(0);
-    thread::spawn(move ||{
+    thread::spawn(move || {
         web_api::run_server(inst, id);
-
     });
     thread::park();
 }

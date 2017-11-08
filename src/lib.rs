@@ -1,8 +1,8 @@
-extern crate modular_flow;
+extern crate libc;
 extern crate libloading;
+extern crate modular_flow;
 extern crate serde;
 extern crate serde_json;
-extern crate libc;
 
 pub mod control;
 mod plugin_loader;

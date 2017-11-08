@@ -111,7 +111,8 @@ impl WebApi {
                 })
             })
             .collect();
-        let types: Vec<_> = self.inst.types
+        let types: Vec<_> = self.inst
+            .types
             .nodes()
             .iter()
             .map(|node| {
@@ -120,12 +121,17 @@ impl WebApi {
                 })
             })
             .collect();
-        let libs: Vec<_> = self.inst.types.libs().iter().map(|lib| {
-            json!({
+        let libs: Vec<_> = self.inst
+            .types
+            .libs()
+            .iter()
+            .map(|lib| {
+                json!({
                 "name": lib.name,
                 "path": lib.path,
             })
-        }).collect();
+            })
+            .collect();
         resp_ok(json!({
             "nodes": nodes,
             "types": types,
@@ -183,7 +189,8 @@ fn connect_port(
 
 #[get("/node/disconnect/<node_id>/<port_id>")]
 fn disconnect_port(this: State<Arc<WebApi>>, node_id: usize, port_id: usize) -> JsonResult {
-    let node = this.inst.ctx.graph().node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("invalid node id"))))?;
+    let node =
+        this.inst.ctx.graph().node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("invalid node id"))))?;
     let port = node.in_port(InPortID(port_id)).map_err(|_| JsonErr(Json(json!("invalid port id"))))?;
     match this.inst.ctx.graph().disconnect_in(port) {
         Err(_) => resp_err(json!("cannot disconnect: already connected")),
@@ -220,10 +227,10 @@ fn send_message(
         .map(|(arg, desc)| {
             Ok(match desc.ty {
                 Type::Bool => Value::Bool(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
-                Type::Usize => Value::Usize(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
-                Type::F32 => {
-                    Value::F32(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?)
+                Type::Usize => {
+                    Value::Usize(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?)
                 }
+                Type::F32 => Value::F32(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
                 Type::String => Value::String(arg.clone()),
             })
         })
@@ -245,7 +252,7 @@ fn load_library(this: State<Arc<WebApi>>, path: Json<String>) -> JsonResult {
 fn run_notifier(api: Arc<WebApi>, id: usize) {
     thread::spawn(move || {
         let api = api.clone();
-        listen(&format!("127.0.0.1:{}", 3000+id), move |out| {
+        listen(&format!("127.0.0.1:{}", 3000 + id), move |out| {
             let api = api.clone();
             thread::spawn(move || {
                 let mut prev_nodes_str = "".into();
@@ -271,7 +278,7 @@ pub fn run_server(inst: Instance, id: usize) {
     let options = rocket_cors::Cors::default();
     let config = Config::build(Environment::Development)
         .address("127.0.0.1")
-        .port(8008+id as u16)
+        .port(8008 + id as u16)
         .finalize()
         .unwrap();
     rocket::custom(config, true)
