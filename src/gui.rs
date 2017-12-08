@@ -177,8 +177,8 @@ impl ModelUpdater {
     }
 }
 fn point_in_rect(pos: [f32; 2], rect: &Rect) -> bool {
-    return pos[0] >= rect.translate[0] && pos[0] <= rect.translate[0] + rect.scale[0]
-        && pos[1] >= rect.translate[1] && pos[1] <= rect.translate[1] + rect.scale[1];
+    pos[0] >= rect.translate[0] && pos[0] <= rect.translate[0] + rect.scale[0] && pos[1] >= rect.translate[1]
+        && pos[1] <= rect.translate[1] + rect.scale[1]
 }
 
 fn main_loop(model: &mut Model) {
