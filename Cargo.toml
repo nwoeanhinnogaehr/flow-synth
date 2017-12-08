@@ -14,6 +14,10 @@ ws = "*"
 serde_json = "*"
 serde_derive = "*"
 libc = "*"
+glutin = "*"
+gfx = "*"
+gfx_window_glutin = "*"
+gfx_text = "*"
 
 [dependencies.serde]
 version = "*"

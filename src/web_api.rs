@@ -25,7 +25,10 @@ impl WebApi {
     }
 
     fn node(&self, id: NodeID) -> Result<Arc<NodeInstance>, JsonErr> {
-        self.inst.nodes.node(id).ok_or(JsonErr(Json(json!("invalid node"))))
+        self.inst
+            .nodes
+            .node(id)
+            .ok_or(JsonErr(Json(json!("invalid node"))))
     }
 
     fn remove_node(&self, id: NodeID) -> Result<(), JsonErr> {
@@ -156,7 +159,10 @@ fn status_string(node: &NodeInstance) -> &'static str {
 //TODO make this post so names can contain arbitrary characters
 #[get("/type/new/<name>")]
 fn node_create(this: State<Arc<WebApi>>, name: String) -> JsonResult {
-    let desc = this.inst.types.node(&name).ok_or(JsonErr(Json(json!("id out of bounds"))))?;
+    let desc = this.inst
+        .types
+        .node(&name)
+        .ok_or(JsonErr(Json(json!("id out of bounds"))))?;
     let ctl = (desc.new)(this.inst.ctx.clone(), NewNodeConfig::empty());
     let id = ctl.node().id().0;
     this.inst.nodes.insert(NodeInstance {
@@ -189,9 +195,13 @@ fn connect_port(
 
 #[get("/node/disconnect/<node_id>/<port_id>")]
 fn disconnect_port(this: State<Arc<WebApi>>, node_id: usize, port_id: usize) -> JsonResult {
-    let node =
-        this.inst.ctx.graph().node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("invalid node id"))))?;
-    let port = node.in_port(InPortID(port_id)).map_err(|_| JsonErr(Json(json!("invalid port id"))))?;
+    let node = this.inst
+        .ctx
+        .graph()
+        .node(NodeID(node_id))
+        .map_err(|_| JsonErr(Json(json!("invalid node id"))))?;
+    let port = node.in_port(InPortID(port_id))
+        .map_err(|_| JsonErr(Json(json!("invalid port id"))))?;
     match this.inst.ctx.graph().disconnect_in(port) {
         Err(_) => resp_err(json!("cannot disconnect: already connected")),
         Ok(_) => resp_ok(json!({})),
@@ -199,12 +209,16 @@ fn disconnect_port(this: State<Arc<WebApi>>, node_id: usize, port_id: usize) -> 
 }
 #[get("/node/kill/<node_id>")]
 fn set_node_status(this: State<Arc<WebApi>>, node_id: usize) -> JsonResult {
-    this.inst.kill_node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("couldn't kill node"))))?;
+    this.inst
+        .kill_node(NodeID(node_id))
+        .map_err(|_| JsonErr(Json(json!("couldn't kill node"))))?;
     resp_ok(json!({}))
 }
 #[get("/node/reload/<node_id>")]
 fn reload_node(this: State<Arc<WebApi>>, node_id: usize) -> JsonResult {
-    this.inst.reload_node(NodeID(node_id)).map_err(|_| JsonErr(Json(json!("couldn't reload node"))))?;
+    this.inst
+        .reload_node(NodeID(node_id))
+        .map_err(|_| JsonErr(Json(json!("couldn't reload node"))))?;
     resp_ok(json!({}))
 }
 
@@ -226,11 +240,12 @@ fn send_message(
         .zip(message_descriptor.args.iter())
         .map(|(arg, desc)| {
             Ok(match desc.ty {
-                Type::Bool => Value::Bool(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
-                Type::Usize => {
-                    Value::Usize(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?)
-                }
-                Type::F32 => Value::F32(arg.parse().map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
+                Type::Bool => Value::Bool(arg.parse()
+                    .map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
+                Type::Usize => Value::Usize(arg.parse()
+                    .map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
+                Type::F32 => Value::F32(arg.parse()
+                    .map_err(|e| JsonErr(Json(json!(format!("{:?}", e)))))?),
                 Type::String => Value::String(arg.clone()),
             })
         })
@@ -258,8 +273,12 @@ fn run_notifier(api: Arc<WebApi>, id: usize) {
                 let mut prev_nodes_str = "".into();
                 loop {
                     thread::sleep(Duration::from_millis(100));
-                    let state_str =
-                        format!("{}", api.state_json().map(|x| (x.0).0).unwrap_or_else(|x| (x.0).0));
+                    let state_str = format!(
+                        "{}",
+                        api.state_json()
+                            .map(|x| (x.0).0)
+                            .unwrap_or_else(|x| (x.0).0)
+                    );
                     if state_str != prev_nodes_str {
                         out.send(state_str.clone()).unwrap();
                         serialize::to_file("dump.json", &api.inst);

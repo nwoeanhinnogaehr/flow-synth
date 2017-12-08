@@ -32,7 +32,12 @@ impl Instance {
             let old_lib = libs.iter().find(|lib| lib.path == path);
             if let Some(old_lib) = old_lib {
                 for node in self.nodes.nodes() {
-                    if old_lib.nodes.iter().find(|desc| desc.name == node.type_name).is_some() {
+                    if old_lib
+                        .nodes
+                        .iter()
+                        .find(|desc| desc.name == node.type_name)
+                        .is_some()
+                    {
                         self.stop_node(node.ctl.node().id()).unwrap();
                     }
                 }
@@ -56,11 +61,20 @@ impl Instance {
     pub fn reload_node(&self, id: NodeID) -> Result<()> {
         let node = self.nodes.node(id).ok_or(Error::InvalidNode)?;
         let libs = self.types.libs();
-        let old_lib =
-            libs.iter().find(|lib| lib.nodes.iter().find(|ty| ty.name == node.type_name).is_some()).unwrap();
+        let old_lib = libs.iter()
+            .find(|lib| {
+                lib.nodes
+                    .iter()
+                    .find(|ty| ty.name == node.type_name)
+                    .is_some()
+            })
+            .unwrap();
         self.stop_node(node.ctl.node().id())?;
         let lib = self.types.load_library(&old_lib.path).unwrap();
-        let node_desc = lib.nodes.iter().find(|desc| desc.name == node.type_name).unwrap();
+        let node_desc = lib.nodes
+            .iter()
+            .find(|desc| desc.name == node.type_name)
+            .unwrap();
         self.nodes.remove(node.ctl.node().id());
         let ctl = (node_desc.new)(
             self.ctx.clone(),
@@ -80,7 +94,11 @@ impl Instance {
     }
     pub fn stop_node(&self, id: NodeID) -> Result<Arc<NodeInstance>> {
         let node = self.nodes.node(id).ok_or(Error::InvalidNode)?;
-        println!("trying to stop {} [{}]", node.type_name, node.ctl.node().id().0);
+        println!(
+            "trying to stop {} [{}]",
+            node.type_name,
+            node.ctl.node().id().0
+        );
         node.ctl.stop();
         while node.ctl.node().attached() {
             node.ctl.node().notify_self();
@@ -112,10 +130,18 @@ impl NodeInstances {
         self.list.lock().unwrap().push(Arc::new(inst));
     }
     pub fn remove(&self, id: NodeID) {
-        self.list.lock().unwrap().retain(|node| node.ctl.node().id() != id);
+        self.list
+            .lock()
+            .unwrap()
+            .retain(|node| node.ctl.node().id() != id);
     }
     pub fn node(&self, id: NodeID) -> Option<Arc<NodeInstance>> {
-        self.list.lock().unwrap().iter().cloned().find(|node| node.ctl.node().id() == id)
+        self.list
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .find(|node| node.ctl.node().id() == id)
     }
     pub fn nodes(&self) -> Vec<Arc<NodeInstance>> {
         self.list.lock().unwrap().clone()
@@ -203,7 +229,12 @@ impl NodeDescriptors {
         self.nodes().iter().cloned().find(|node| node.name == name)
     }
     pub fn nodes(&self) -> Vec<NodeDescriptor> {
-        self.libs.lock().unwrap().iter().flat_map(|lib| lib.nodes.clone()).collect()
+        self.libs
+            .lock()
+            .unwrap()
+            .iter()
+            .flat_map(|lib| lib.nodes.clone())
+            .collect()
     }
 }
 
@@ -280,7 +311,11 @@ impl RemoteControl {
     pub fn stop(&self) {
         self.stopped.store(true, Ordering::Release);
         self.node.set_aborting(true);
-        self.stop_thread.lock().unwrap().as_ref().map(|thread| thread.unpark());
+        self.stop_thread
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|thread| thread.unpark());
     }
     pub fn stopped(&self) -> bool {
         self.stopped.load(Ordering::Acquire)
