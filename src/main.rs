@@ -8,6 +8,7 @@
 #![feature(generators)]
 #![feature(generator_trait)]
 #![feature(match_default_bindings)]
+#![feature(use_nested_groups)]
 #![feature(libc)]
 #![allow(unused)]
 
@@ -29,25 +30,25 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate ws;
 
-mod web_api;
-mod control;
-mod serialize;
-mod plugin_loader;
+//mod web_api;
+//mod control;
+//mod serialize;
+//mod plugin_loader;
 mod gui;
 
 use std::env;
 use std::thread;
 
 fn main() {
-    let inst = env::args()
+    /*let inst = env::args()
         .nth(1)
         .map(|name| serialize::from_file(&name))
         .unwrap_or(control::Instance::new());
     let id = env::args()
         .nth(2)
         .map(|id| id.parse().unwrap())
-        .unwrap_or(0);
-    gui::gui_main(&inst);
+        .unwrap_or(0);*/
+    gui::gui_main();
     //thread::spawn(move || {
     //web_api::run_server(inst, id);
     //});

@@ -1,9 +1,7 @@
-use control::Instance as FsInstance;
-
 use glutin::{self, Api, ContextBuilder, ControlFlow, EventsLoop, GlContext, GlRequest, Window,
              WindowBuilder, WindowEvent};
 
-use modular_flow::{context, graph};
+use modular_flow as mf;
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -57,7 +55,24 @@ fn rect(x: f32, y: f32, w: f32, h: f32) -> [Vertex; 4] {
 
 const RECT_IDX: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
-pub fn gui_main(inst: &FsInstance) {
+pub fn gui_main() {
+    let graph = mf::Graph::<Box<GuiModule>>::new();
+    let node = graph.add_node(&mf::MetaModule {
+        id: "test",
+        new: |ifc| Box::new(TestModule{}) as Box<GuiModule>,
+    });
+    let node2 = graph.add_node(&mf::MetaModule {
+        id: "test2",
+        new: |ifc| Box::new(TestModule2{}) as Box<GuiModule>,
+    });
+    let mut guard = node.module();
+    let mut guard2 = node2.module();
+    let module = guard.as_mut().unwrap();
+    let module2 = guard2.as_mut().unwrap();
+    module.start();
+    module.render();
+    module2.start();
+    module2.render();
     let mut model = Model::new();
     main_loop(&mut model);
 }
@@ -75,7 +90,7 @@ impl Model {
 }
 
 struct Node {
-    id: graph::NodeID,
+    id: mf::NodeId,
     rect: Rect,
     drag: Option<[f32; 2]>,
 }
@@ -83,7 +98,7 @@ struct Node {
 impl Node {
     fn new(inst: Rect) -> Node {
         Node {
-            id: graph::NodeID(0),
+            id: mf::NodeId(0),
             rect: inst,
             drag: None,
         }
@@ -307,3 +322,35 @@ fn main_loop(model: &mut Model) {
         device.cleanup();
     }
 }
+
+trait Module {
+    fn start(&mut self);
+}
+
+trait GuiModule: Module {
+    fn render(&mut self);
+}
+
+impl<T> GuiModule for T where T: Module {
+    default fn render(&mut self) {
+        println!("rendering!!");
+    }
+}
+impl GuiModule for TestModule {
+    fn render(&mut self) {
+        println!("spec rendering!!");
+    }
+}
+impl Module for TestModule {
+    fn start(&mut self) {
+        println!("start!!");
+    }
+}
+impl Module for TestModule2 {
+    fn start(&mut self) {
+        println!("start2!!");
+    }
+}
+
+struct TestModule {}
+struct TestModule2 {}
