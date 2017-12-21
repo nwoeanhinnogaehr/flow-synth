@@ -9,6 +9,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::collections::VecDeque;
+use std::sync::Mutex;
 
 use gfx;
 use gfx::traits::{Factory, FactoryExt};
@@ -56,19 +57,19 @@ fn rect(x: f32, y: f32, w: f32, h: f32) -> [Vertex; 4] {
 const RECT_IDX: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
 pub fn gui_main() {
-    let graph = mf::Graph::<Box<GuiModule>>::new();
-    let node = graph.add_node(&mf::MetaModule {
-        id: "test",
-        new: |ifc| Box::new(TestModule{}) as Box<GuiModule>,
-    });
-    let node2 = graph.add_node(&mf::MetaModule {
-        id: "test2",
-        new: |ifc| Box::new(TestModule2{}) as Box<GuiModule>,
-    });
-    let mut guard = node.module();
-    let mut guard2 = node2.module();
-    let module = guard.as_mut().unwrap();
-    let module2 = guard2.as_mut().unwrap();
+    let graph = mf::Graph::<Mutex<Box<GuiModule>>>::new();
+    let node = graph.add_node(&mf::MetaModule::new(
+        "test",
+        |ifc| Mutex::new(Box::new(TestModule{}) as Box<GuiModule>),
+    ));
+    let node2 = graph.add_node(&mf::MetaModule::new(
+        "test2",
+        |ifc| Mutex::new(Box::new(TestModule2{}) as Box<GuiModule>),
+    ));
+    let module = node.module();
+    let module2 = node2.module();
+    let mut module = module.lock().unwrap();
+    let mut module2 = module2.lock().unwrap();
     module.start();
     module.render();
     module2.start();
