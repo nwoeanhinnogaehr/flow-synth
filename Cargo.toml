@@ -18,6 +18,7 @@ glutin = "*"
 gfx = "*"
 gfx_window_glutin = "*"
 gfx_text = "*"
+gfx_device_gl = "*"
 
 [dependencies.serde]
 version = "*"
