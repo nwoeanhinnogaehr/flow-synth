@@ -2,7 +2,6 @@
 #![feature(plugin)]
 #![feature(catch_expr)]
 #![feature(fnbox)]
-#![plugin(rocket_codegen)]
 #![feature(const_fn)]
 #![feature(universal_impl_trait)]
 #![feature(generators)]
@@ -10,6 +9,7 @@
 #![feature(match_default_bindings)]
 #![feature(use_nested_groups)]
 #![feature(libc)]
+#![feature(drain_filter)]
 #![allow(unused)]
 
 #[macro_use]
@@ -19,17 +19,17 @@ extern crate gfx_text;
 extern crate gfx_window_glutin;
 extern crate glutin;
 extern crate libc;
-extern crate libloading;
+//extern crate libloading;
 extern crate modular_flow;
-extern crate rocket;
-#[macro_use]
-extern crate rocket_contrib;
-extern crate rocket_cors;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate serde_json;
-extern crate ws;
+//extern crate rocket;
+//#[macro_use]
+//extern crate rocket_contrib;
+//extern crate rocket_cors;
+//extern crate serde;
+//#[macro_use]
+//extern crate serde_derive;
+//extern crate serde_json;
+//extern crate ws;
 
 //mod web_api;
 //mod control;
