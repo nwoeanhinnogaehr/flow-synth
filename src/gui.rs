@@ -39,7 +39,7 @@ gfx_defines! {
     }
 
     pipeline rect_pipe {
-        aspect_ratio: gfx::Global<f32> = "i_AspectRatio",
+        resolution: gfx::Global<[f32; 2]> = "i_Resolution",
         vertices: gfx::VertexBuffer<Vertex> = (),
         instances: gfx::InstanceBuffer<ColoredRect> = (),
         out: gfx::RenderTarget<ColorFormat> = "Target0",
@@ -55,6 +55,7 @@ gfx_defines! {
     }
 
     pipeline textured_rect_pipe {
+        resolution: gfx::Global<[f32; 2]> = "i_Resolution",
         texture: gfx::TextureSampler<[f32; 4]> = "i_Texture",
         vertices: gfx::VertexBuffer<TexturedVertex> = (),
         out: gfx::RenderTarget<ColorFormat> = "Target0",
@@ -152,8 +153,7 @@ impl Model {
                     device_id: _,
                     position,
                 } => {
-                    self.mouse_pos =
-                        pixels_to_coords(self.window_size, [position.0 as f32, position.1 as f32]);
+                    self.mouse_pos = [position.0 as f32, position.1 as f32];
                 }
                 MouseInput {
                     device_id: _,
@@ -240,7 +240,7 @@ fn main_loop(model: &mut Model) {
         "bar",
         Arc::new(move |ifc| {
             let mut w = GuiModuleWrapper::new(TestModule::new(ifc), mod_ctx.clone());
-            w.window_rect.translate[0] = 0.5;
+            w.window_rect.translate[0] = 256.0;
             Mutex::new(Box::new(w))
         }),
     ));
@@ -366,7 +366,7 @@ impl RectRenderer {
             .create_buffer_immutable(&self.rects, Role::Vertex, Bind::empty())
             .unwrap();
         let data = rect_pipe::Data {
-            aspect_ratio: aspect_ratio(target_dimensions(target)),
+            resolution: target_dimensions(target),
             vertices: self.vertex_buffer.clone(),
             instances: instance_buffer,
             out: target.color.clone(),
@@ -417,7 +417,7 @@ impl TexturedRectRenderer {
             let vertices = [
                 TexturedVertex {
                     translate: [rect.translate[0], rect.translate[1], rect.translate[2]],
-                    tex_coord: [0.0, 0.0],
+                    tex_coord: [0.0, 1.0],
                 },
                 TexturedVertex {
                     translate: [
@@ -425,7 +425,7 @@ impl TexturedRectRenderer {
                         rect.translate[1] + rect.scale[1],
                         rect.translate[2],
                     ],
-                    tex_coord: [0.0, 1.0],
+                    tex_coord: [0.0, 0.0],
                 },
                 TexturedVertex {
                     translate: [
@@ -433,7 +433,7 @@ impl TexturedRectRenderer {
                         rect.translate[1] + rect.scale[1],
                         rect.translate[2],
                     ],
-                    tex_coord: [1.0, 1.0],
+                    tex_coord: [1.0, 0.0],
                 },
                 TexturedVertex {
                     translate: [
@@ -441,12 +441,13 @@ impl TexturedRectRenderer {
                         rect.translate[1],
                         rect.translate[2],
                     ],
-                    tex_coord: [1.0, 0.0],
+                    tex_coord: [1.0, 1.0],
                 },
             ];
             let (vertex_buffer, slice) = self.factory
                 .create_vertex_buffer_with_slice(&vertices, &RECT_IDX[..]);
             let data = textured_rect_pipe::Data {
+                resolution: target_dimensions(target),
                 texture: (texture, self.sampler.clone()),
                 vertices: vertex_buffer,
                 out: target.color.clone(),
@@ -560,6 +561,7 @@ struct GuiModuleWrapper<Module> {
     module: Module,
 
     window_rect: Rect,
+    size: [f32; 2],
     drag: Option<[f32; 2]>,
 
     internal_ctx: RenderContext,
@@ -572,9 +574,10 @@ struct GuiModuleWrapper<Module> {
 impl<Module> GuiModuleWrapper<Module> {
     fn new(module: Module, ctx: RenderContext) -> GuiModuleWrapper<Module> {
         let mut factory = ctx.factory.clone();
+        let size = [256.0; 2];
         let module_target_texture = factory
             .create_texture(
-                texture::Kind::D2(128, 128, texture::AaMode::Single),
+                texture::Kind::D2(size[0] as u16, size[1] as u16, texture::AaMode::Single),
                 1, //levels
                 gfx::RENDER_TARGET | gfx::SHADER_RESOURCE,
                 Usage::Data,
@@ -598,7 +601,7 @@ impl<Module> GuiModuleWrapper<Module> {
 
         let module_depth_texture = factory
             .create_texture(
-                texture::Kind::D2(128, 128, texture::AaMode::Single),
+                texture::Kind::D2(size[0] as u16, size[1] as u16, texture::AaMode::Single),
                 1, //levels
                 gfx::DEPTH_STENCIL,
                 Usage::Data,
@@ -623,8 +626,9 @@ impl<Module> GuiModuleWrapper<Module> {
             module,
             window_rect: Rect {
                 translate: [0.0, 0.0, 0.0],
-                scale: [0.4, 0.4],
+                scale: size,
             },
+            size,
             drag: None,
             internal_ctx: ctx,
             module_target_resource,
@@ -643,13 +647,13 @@ where
         self.internal_ctx.begin_frame(&self.module_target);
 
         self.internal_ctx.draw_rect(ColoredRect {
-            translate: [-1.0, -1.0, 0.0],
-            scale: [2.0, 2.0],
+            translate: [0.0, 0.0, 0.0],
+            scale: self.size,
             color: [1.0, 1.0, 1.0],
         });
         let title = &self.title();
         self.internal_ctx
-            .draw_text(title, [0.0, 0.0], [0.0, 0.0, 0.0]);
+            .draw_text(title, [16.0, 16.0], [0.0, 0.0, 0.0]);
 
         self.internal_ctx.end_frame(device, &self.module_target);
 
