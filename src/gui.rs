@@ -17,7 +17,7 @@ use gfx::traits::{Factory, FactoryExt};
 use gfx::{Bind, CommandBuffer, Device, Encoder, IntoIndexBuffer, PipelineState, Resources, Slice};
 use gfx::memory::Usage;
 use gfx::buffer::Role;
-use gfx::handle::{Buffer, RenderTargetView, DepthStencilView, Sampler, ShaderResourceView, Texture};
+use gfx::handle::{Buffer, DepthStencilView, RenderTargetView, Sampler, ShaderResourceView, Texture};
 use gfx_window_glutin as gfx_glutin;
 use gfx_text;
 use gfx_device_gl as gl;
@@ -184,7 +184,7 @@ impl Model {
                                         break;
                                     }
                                 }
-                            };
+                            }
                             if hit {
                                 let removed = self.node_z.remove(idx);
                                 self.node_z.push(removed);
@@ -361,11 +361,7 @@ impl RectRenderer {
     fn push(&mut self, rect: ColoredRect) {
         self.rects.push(rect);
     }
-    fn draw(
-        &mut self,
-        encoder: &mut Encoder<gl::Resources, gl::CommandBuffer>,
-        target: &Target,
-    ) {
+    fn draw(&mut self, encoder: &mut Encoder<gl::Resources, gl::CommandBuffer>, target: &Target) {
         let instance_buffer = self.factory
             .create_buffer_immutable(&self.rects, Role::Vertex, Bind::empty())
             .unwrap();
@@ -416,11 +412,7 @@ impl TexturedRectRenderer {
     fn push(&mut self, rect: Rect, texture: ShaderResourceView<gl::Resources, [f32; 4]>) {
         self.rects.push((rect, texture));
     }
-    fn draw(
-        &mut self,
-        encoder: &mut Encoder<gl::Resources, gl::CommandBuffer>,
-        target: &Target,
-    ) {
+    fn draw(&mut self, encoder: &mut Encoder<gl::Resources, gl::CommandBuffer>, target: &Target) {
         for (rect, texture) in self.rects.drain(..) {
             let vertices = [
                 TexturedVertex {
@@ -481,11 +473,7 @@ impl TextRenderer {
     fn push(&mut self, text: &str, pos: [f32; 2], color: [f32; 3]) {
         self.texts.push((text.into(), pos, color));
     }
-    fn draw(
-        &mut self,
-        encoder: &mut Encoder<gl::Resources, gl::CommandBuffer>,
-        target: &Target,
-    ) {
+    fn draw(&mut self, encoder: &mut Encoder<gl::Resources, gl::CommandBuffer>, target: &Target) {
         let mut renderer = self.renderer.lock().unwrap();
         for (text, pos, color) in self.texts.drain(..) {
             renderer.add(
@@ -536,11 +524,7 @@ impl RenderContext {
     pub fn factory(&self) -> &gl::Factory {
         &self.factory
     }
-    pub fn end_frame(
-        &mut self,
-        device: &mut gl::Device,
-        target: &Target,
-    ) {
+    pub fn end_frame(&mut self, device: &mut gl::Device, target: &Target) {
         self.rects.draw(&mut self.encoder, target);
         self.textured_rects.draw(&mut self.encoder, target);
         self.texts.draw(&mut self.encoder, target);
