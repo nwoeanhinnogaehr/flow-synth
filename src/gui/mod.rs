@@ -1,6 +1,7 @@
 mod render;
 
 use self::render::*;
+use super::module::*;
 
 use glutin::{self, Api, ContextBuilder, ControlFlow, EventsLoop, GlContext, GlRequest, Window,
              WindowBuilder, WindowEvent};
@@ -247,10 +248,6 @@ fn main_loop(model: &mut Model) {
     }
 }
 
-trait Module {
-    fn start(&mut self);
-    fn title(&self) -> String;
-}
 trait GuiModule: Module {
     fn update(&mut self, model: &Model, &glutin::Event);
     fn render(&mut self, &mut gl::Device, &mut RenderContext, i32);
@@ -404,22 +401,5 @@ where
     }
     fn title(&self) -> String {
         T::title(&self.module)
-    }
-}
-
-struct TestModule {
-    ifc: Arc<Interface>,
-}
-impl TestModule {
-    fn new(ifc: Arc<Interface>) -> TestModule {
-        TestModule { ifc }
-    }
-}
-impl Module for TestModule {
-    fn start(&mut self) {
-        println!("start!!");
-    }
-    fn title(&self) -> String {
-        self.ifc.meta().name.to_string()
     }
 }

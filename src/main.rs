@@ -35,6 +35,7 @@ extern crate modular_flow;
 //mod control;
 //mod serialize;
 //mod plugin_loader;
+mod module;
 mod gui;
 
 use std::env;
