@@ -74,6 +74,30 @@ impl Model {
         self.update_depth();
     }
 
+    fn handle_mouse_input(&mut self, state: &glutin::ElementState, button: &glutin::MouseButton) {
+        use glutin::*;
+
+        let graph_nodes = self.graph.node_map();
+        let mut hit = false;
+        let mut idx = self.node_z.len();
+        for id in self.node_z.iter().rev() {
+            idx -= 1;
+            if let Some(node) = graph_nodes.get(id) {
+                let mut module = node.module().lock().unwrap();
+                let rect = *module.window_rect();
+                if point_in_rect(self.mouse_pos, &rect) {
+                    module.handle_click(self, state, button);
+                    hit = true;
+                    break;
+                }
+            }
+        }
+        if hit {
+            let removed = self.node_z.remove(idx);
+            self.node_z.push(removed);
+        }
+    }
+
     fn handle(&mut self, event: &glutin::Event) {
         use glutin::WindowEvent::*;
         use glutin::*;
@@ -96,49 +120,9 @@ impl Model {
                     device_id: _,
                     state,
                     button,
-                } => match button {
-                    MouseButton::Right => match state {
-                        ElementState::Pressed => {}
-                        ElementState::Released => {}
-                    },
-
-                    MouseButton::Left => match state {
-                        ElementState::Pressed => {
-                            let graph_nodes = self.graph.node_map();
-                            let mut hit = false;
-                            let mut idx = self.node_z.len();
-                            for id in self.node_z.iter().rev() {
-                                idx -= 1;
-                                if let Some(node) = graph_nodes.get(id) {
-                                    let mut module = node.module().lock().unwrap();
-                                    let rect = *module.window_rect();
-                                    if point_in_rect(self.mouse_pos, &rect) {
-                                        module.set_drag(Some([
-                                            self.mouse_pos[0] - rect.translate[0],
-                                            self.mouse_pos[1] - rect.translate[1],
-                                        ]));
-                                        hit = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            if hit {
-                                let removed = self.node_z.remove(idx);
-                                self.node_z.push(removed);
-                            }
-                        }
-                        ElementState::Released => {
-                            let graph_nodes = self.graph.node_map();
-                            for id in self.node_z.iter().rev() {
-                                if let Some(node) = graph_nodes.get(id) {
-                                    let mut module = node.module().lock().unwrap();
-                                    module.set_drag(None);
-                                }
-                            }
-                        }
-                    },
-                    _ => (),
-                },
+                } => {
+                    self.handle_mouse_input(&state, &button);
+                }
                 _ => (),
             },
             _ => (),
@@ -198,11 +182,15 @@ fn main_loop(model: &mut Model) {
             }
         }
         model.update();
+        for node in model.graph.nodes() {
+            let mut module = node.module().lock().unwrap();
+            module.update(&model);
+        }
         events_loop.poll_events(|event| {
             model.handle(&event);
             for node in model.graph.nodes() {
                 let mut module = node.module().lock().unwrap();
-                module.update(&model, &event);
+                module.handle(&model, &event);
             }
             use glutin::WindowEvent::*;
             match event {
@@ -238,7 +226,7 @@ fn main_loop(model: &mut Model) {
         // debug text
         ctx.draw_text(
             &format!("FPS={} Time={}", frames.len(), model.time),
-            [0.5, 0.5],
+            [0.0, 0.0],
             [1.0, 1.0, 1.0],
         );
 
@@ -249,10 +237,12 @@ fn main_loop(model: &mut Model) {
 }
 
 trait GuiModule: Module {
-    fn update(&mut self, model: &Model, &glutin::Event);
     fn render(&mut self, &mut gl::Device, &mut RenderContext, i32);
     fn window_rect(&self) -> &Rect;
-    fn set_drag(&mut self, drag: Option<[f32; 2]>);
+
+    fn update(&mut self, model: &Model);
+    fn handle(&mut self, model: &Model, event: &glutin::Event);
+    fn handle_click(&mut self, model: &Model, state: &glutin::ElementState, button: &glutin::MouseButton);
 }
 struct GuiModuleWrapper<Module> {
     module: Module,
@@ -357,7 +347,7 @@ where
         self.window_rect.translate[2] = z_idx as f32;
         ctx.draw_textured_rect(self.window_rect, self.module_target_resource.clone());
     }
-    fn update(&mut self, model: &Model, event: &glutin::Event) {
+    fn update(&mut self, model: &Model) {
         if let Some(drag) = self.drag {
             self.window_rect.translate = [
                 -drag[0] + model.mouse_pos[0],
@@ -365,31 +355,30 @@ where
                 0.0,
             ];
         }
-
-        use glutin::WindowEvent::*;
+    }
+    fn handle(&mut self, model: &Model, event: &glutin::Event) {
+    }
+    fn handle_click(&mut self, model: &Model, state: &glutin::ElementState, button: &glutin::MouseButton) {
         use glutin::*;
-        match event {
-            glutin::Event::WindowEvent {
-                window_id: _,
-                event,
-            } => match event {
-                MouseInput {
-                    device_id: _,
-                    state,
-                    button,
-                } => match button {
-                    _ => (),
-                },
-                _ => (),
-            },
-            _ => (),
+        match button {
+            MouseButton::Left => {
+                match state {
+                    ElementState::Pressed => {
+                        self.drag = Some([
+                            model.mouse_pos[0] - self.window_rect.translate[0],
+                            model.mouse_pos[1] - self.window_rect.translate[1],
+                        ]);
+                    },
+                    ElementState::Released => {
+                        self.drag = None;
+                    }
+                }
+            }
+            _ => {},
         }
     }
     fn window_rect(&self) -> &Rect {
         &self.window_rect
-    }
-    fn set_drag(&mut self, drag: Option<[f32; 2]>) {
-        self.drag = drag;
     }
 }
 impl<T> Module for GuiModuleWrapper<T>
