@@ -80,7 +80,7 @@ impl Model {
         let graph_nodes = self.graph.node_map();
         let mut hit = false;
         let mut idx = self.node_z.len();
-        for id in self.node_z.iter() {
+        for id in self.node_z.iter().rev() {
             idx -= 1;
             if let Some(node) = graph_nodes.get(id) {
                 let mut module = node.module().lock().unwrap();
@@ -167,6 +167,15 @@ fn main_loop(model: &mut Model) {
             Mutex::new(Box::new(w))
         }),
     ));
+    let mod_ctx = ctx.clone();
+    model.graph.add_node(&mf::MetaModule::new(
+        "baz",
+        Arc::new(move |ifc| {
+            let mut w = GuiModuleWrapper::new(TestModule::new(ifc), mod_ctx.clone());
+            w.window_rect.translate[0] = 512.0;
+            Mutex::new(Box::new(w))
+        }),
+    ));
 
     // begin main loop
     let mut running = true;
@@ -218,7 +227,7 @@ fn main_loop(model: &mut Model) {
             match graph_nodes.get(id) {
                 Some(node) => {
                     let mut module = node.module().lock().unwrap();
-                    module.render(&mut device, &mut ctx, z_idx);
+                    module.render(&mut device, &mut ctx, 1.0 - z_idx as f32 / graph_nodes.len() as f32);
                     z_idx += 1;
                 }
                 None => (), // node was removed between call to model.update() and here. safe to ignore
@@ -242,7 +251,7 @@ const TITLE_BAR_HEIGHT: f32 = 24.0;
 const BORDER_SIZE: f32 = 1.0;
 
 trait GuiModule: Module {
-    fn render(&mut self, &mut gl::Device, &mut RenderContext, i32);
+    fn render(&mut self, &mut gl::Device, &mut RenderContext, f32);
     fn window_rect(&self) -> &Rect;
 
     fn update(&mut self, model: &Model);
@@ -357,7 +366,7 @@ impl<T> GuiModule for GuiModuleWrapper<T>
 where
     T: Module,
 {
-    fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, z_idx: i32) {
+    fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, z_idx: f32) {
         if self.dirty {
             self.internal_ctx.begin_frame(&self.module_target);
             self.render_self();
@@ -365,7 +374,7 @@ where
             self.dirty = false;
         }
 
-        self.window_rect.translate[2] = z_idx as f32;
+        self.window_rect.translate[2] = z_idx;
         ctx.draw_textured_rect(self.window_rect, self.module_target_resource.clone());
     }
     fn update(&mut self, model: &Model) {
