@@ -86,7 +86,6 @@ fn rect(x: f32, y: f32, w: f32, h: f32) -> [Vertex; 4] {
 
 const RECT_IDX: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
-
 #[derive(Clone)]
 struct RectRenderer {
     factory: gl::Factory,
@@ -322,7 +321,6 @@ impl Clone for RenderContext {
         }
     }
 }
-
 
 pub fn point_in_rect(pos: [f32; 2], rect: &Rect) -> bool {
     pos[0] >= rect.translate[0] && pos[0] <= rect.translate[0] + rect.scale[0] && pos[1] >= rect.translate[1]

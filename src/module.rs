@@ -6,7 +6,6 @@ pub trait Module {
     fn title(&self) -> String;
 }
 
-
 pub struct TestModule<M> {
     ifc: Arc<mf::Interface<M>>,
 }

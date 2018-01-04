@@ -80,7 +80,7 @@ impl Model {
         let graph_nodes = self.graph.node_map();
         let mut hit = false;
         let mut idx = self.node_z.len();
-        for id in self.node_z.iter().rev() {
+        for id in self.node_z.iter() {
             idx -= 1;
             if let Some(node) = graph_nodes.get(id) {
                 let mut module = node.module().lock().unwrap();
@@ -216,7 +216,7 @@ fn main_loop(model: &mut Model) {
             match graph_nodes.get(id) {
                 Some(node) => {
                     let mut module = node.module().lock().unwrap();
-                    module.render(&mut device, &mut ctx, -z_idx);
+                    module.render(&mut device, &mut ctx, z_idx);
                     z_idx += 1;
                 }
                 None => (), // node was removed between call to model.update() and here. safe to ignore
@@ -244,8 +244,8 @@ trait GuiModule: Module {
     fn handle(&mut self, model: &Model, event: &glutin::Event);
     fn handle_click(&mut self, model: &Model, state: &glutin::ElementState, button: &glutin::MouseButton);
 }
-struct GuiModuleWrapper<Module> {
-    module: Module,
+struct GuiModuleWrapper<T: Module> {
+    module: T,
 
     window_rect: Rect,
     size: [f32; 2],
@@ -258,8 +258,8 @@ struct GuiModuleWrapper<Module> {
     module_target: Target,
 }
 
-impl<Module> GuiModuleWrapper<Module> {
-    fn new(module: Module, ctx: RenderContext) -> GuiModuleWrapper<Module> {
+impl<T: Module> GuiModuleWrapper<T> {
+    fn new(module: T, ctx: RenderContext) -> GuiModuleWrapper<T> {
         let mut factory = ctx.factory().clone();
         let size = [256.0; 2];
         let module_target_texture = factory
@@ -356,25 +356,22 @@ where
             ];
         }
     }
-    fn handle(&mut self, model: &Model, event: &glutin::Event) {
-    }
+    fn handle(&mut self, model: &Model, event: &glutin::Event) {}
     fn handle_click(&mut self, model: &Model, state: &glutin::ElementState, button: &glutin::MouseButton) {
         use glutin::*;
         match button {
-            MouseButton::Left => {
-                match state {
-                    ElementState::Pressed => {
-                        self.drag = Some([
-                            model.mouse_pos[0] - self.window_rect.translate[0],
-                            model.mouse_pos[1] - self.window_rect.translate[1],
-                        ]);
-                    },
-                    ElementState::Released => {
-                        self.drag = None;
-                    }
+            MouseButton::Left => match state {
+                ElementState::Pressed => {
+                    self.drag = Some([
+                        model.mouse_pos[0] - self.window_rect.translate[0],
+                        model.mouse_pos[1] - self.window_rect.translate[1],
+                    ]);
                 }
-            }
-            _ => {},
+                ElementState::Released => {
+                    self.drag = None;
+                }
+            },
+            _ => {}
         }
     }
     fn window_rect(&self) -> &Rect {
