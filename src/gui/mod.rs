@@ -250,6 +250,7 @@ struct GuiModuleWrapper<T: Module> {
     window_rect: Rect,
     size: [f32; 2],
     drag: Option<[f32; 2]>,
+    dirty: bool,
 
     internal_ctx: RenderContext,
     module_target_texture: Texture<gl::Resources, gfx::format::R8_G8_B8_A8>,
@@ -317,6 +318,7 @@ impl<T: Module> GuiModuleWrapper<T> {
             },
             size,
             drag: None,
+            dirty: true,
             internal_ctx: ctx,
             module_target_resource,
             module_target_texture,
@@ -324,15 +326,7 @@ impl<T: Module> GuiModuleWrapper<T> {
             module_target,
         }
     }
-}
-
-impl<T> GuiModule for GuiModuleWrapper<T>
-where
-    T: Module,
-{
-    fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, z_idx: i32) {
-        self.internal_ctx.begin_frame(&self.module_target);
-
+    fn render_self(&mut self) {
         self.internal_ctx.draw_rect(ColoredRect {
             translate: [0.0, 0.0, 0.0],
             scale: self.size,
@@ -341,8 +335,20 @@ where
         let title = &self.title();
         self.internal_ctx
             .draw_text(title, [16.0, 16.0], [0.0, 0.0, 0.0]);
+    }
+}
 
-        self.internal_ctx.end_frame(device, &self.module_target);
+impl<T> GuiModule for GuiModuleWrapper<T>
+where
+    T: Module,
+{
+    fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, z_idx: i32) {
+        if self.dirty {
+            self.internal_ctx.begin_frame(&self.module_target);
+            self.render_self();
+            self.internal_ctx.end_frame(device, &self.module_target);
+            self.dirty = false;
+        }
 
         self.window_rect.translate[2] = z_idx as f32;
         ctx.draw_textured_rect(self.window_rect, self.module_target_resource.clone());
