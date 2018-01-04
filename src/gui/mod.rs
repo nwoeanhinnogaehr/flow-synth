@@ -93,8 +93,10 @@ impl Model {
             }
         }
         if hit {
-            let removed = self.node_z.remove(idx);
-            self.node_z.push(removed);
+            if let ElementState::Pressed = state {
+                let removed = self.node_z.remove(idx);
+                self.node_z.push(removed);
+            }
         }
     }
 
@@ -236,6 +238,9 @@ fn main_loop(model: &mut Model) {
     }
 }
 
+const TITLE_BAR_HEIGHT: f32 = 24.0;
+const BORDER_SIZE: f32 = 1.0;
+
 trait GuiModule: Module {
     fn render(&mut self, &mut gl::Device, &mut RenderContext, i32);
     fn window_rect(&self) -> &Rect;
@@ -327,14 +332,24 @@ impl<T: Module> GuiModuleWrapper<T> {
         }
     }
     fn render_self(&mut self) {
-        self.internal_ctx.draw_rect(ColoredRect {
+        self.internal_ctx.draw_rect(ColoredRect { // borders
             translate: [0.0, 0.0, 0.0],
             scale: self.size,
             color: [1.0, 1.0, 1.0],
         });
+        self.internal_ctx.draw_rect(ColoredRect { // background
+            translate: [BORDER_SIZE, BORDER_SIZE + TITLE_BAR_HEIGHT, 0.0],
+            scale: [self.size[0] - BORDER_SIZE * 2.0, self.size[1] - BORDER_SIZE * 2.0 - TITLE_BAR_HEIGHT],
+            color: [0.1, 0.1, 0.1],
+        });
+        self.internal_ctx.draw_rect(ColoredRect { // title bar
+            translate: [BORDER_SIZE, BORDER_SIZE, 0.0],
+            scale: [self.size[0] - BORDER_SIZE * 2.0, TITLE_BAR_HEIGHT],
+            color: [0.0, 0.0, 0.0],
+        });
         let title = &self.title();
         self.internal_ctx
-            .draw_text(title, [16.0, 16.0], [0.0, 0.0, 0.0]);
+            .draw_text(title, [4.0, 4.0], [1.0, 1.0, 1.0]);
     }
 }
 
@@ -356,8 +371,8 @@ where
     fn update(&mut self, model: &Model) {
         if let Some(drag) = self.drag {
             self.window_rect.translate = [
-                -drag[0] + model.mouse_pos[0],
-                -drag[1] + model.mouse_pos[1],
+                (-drag[0] + model.mouse_pos[0]).floor(),
+                (-drag[1] + model.mouse_pos[1]).floor(),
                 0.0,
             ];
         }
@@ -368,10 +383,14 @@ where
         match button {
             MouseButton::Left => match state {
                 ElementState::Pressed => {
-                    self.drag = Some([
-                        model.mouse_pos[0] - self.window_rect.translate[0],
-                        model.mouse_pos[1] - self.window_rect.translate[1],
-                    ]);
+                    let mut title_rect = self.window_rect;
+                    title_rect.scale[1] = TITLE_BAR_HEIGHT + BORDER_SIZE;
+                    if point_in_rect(model.mouse_pos, &title_rect) {
+                        self.drag = Some([
+                            model.mouse_pos[0] - self.window_rect.translate[0],
+                            model.mouse_pos[1] - self.window_rect.translate[1],
+                        ]);
+                    }
                 }
                 ElementState::Released => {
                     self.drag = None;
