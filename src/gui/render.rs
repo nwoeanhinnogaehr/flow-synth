@@ -11,7 +11,7 @@ use gfx;
 use gfx::texture;
 use gfx::traits::{Factory, FactoryExt};
 use gfx::{CommandBuffer, Device, Encoder, IntoIndexBuffer, PipelineState, Resources, Slice};
-use gfx::memory::{Usage, Bind};
+use gfx::memory::{Bind, Usage};
 use gfx::buffer::Role;
 use gfx::handle::{Buffer, DepthStencilView, RenderTargetView, Sampler, ShaderResourceView, Texture};
 use gfx_window_glutin as gfx_glutin;

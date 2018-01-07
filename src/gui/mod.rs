@@ -140,7 +140,9 @@ impl Model {
         let test_module = mf::MetaModule::new(
             "TestModule",
             Arc::new(move |ifc| {
-                Mutex::new(Box::new(GuiModuleWrapper::new(TestModule::new(ifc), mod_ctx.clone())) as Box<GuiModule>)
+                Mutex::new(
+                    Box::new(GuiModuleWrapper::new(TestModule::new(ifc), mod_ctx.clone())) as Box<GuiModule>,
+                )
             }),
         );
         self.module_types.push(test_module);
@@ -225,7 +227,11 @@ fn main_loop(model: &mut Model) {
             match graph_nodes.get(id) {
                 Some(node) => {
                     let mut module = node.module().lock().unwrap();
-                    module.render(&mut device, &mut ctx, 1.0 - z_idx as f32 / graph_nodes.len() as f32);
+                    module.render(
+                        &mut device,
+                        &mut ctx,
+                        1.0 - z_idx as f32 / graph_nodes.len() as f32,
+                    );
                     z_idx += 1;
                 }
                 None => (), // node was removed between call to model.update() and here. safe to ignore
@@ -233,7 +239,6 @@ fn main_loop(model: &mut Model) {
         }
 
         // render global widgets
-
 
         // debug text
         ctx.draw_text(
@@ -342,17 +347,23 @@ impl<T: Module> GuiModuleWrapper<T> {
         }
     }
     fn render_self(&mut self) {
-        self.internal_ctx.draw_rect(ColoredRect { // borders
+        // borders
+        self.internal_ctx.draw_rect(ColoredRect {
             translate: [0.0, 0.0, 0.0],
             scale: self.size,
             color: [1.0, 1.0, 1.0],
         });
-        self.internal_ctx.draw_rect(ColoredRect { // background
+        // background
+        self.internal_ctx.draw_rect(ColoredRect {
             translate: [BORDER_SIZE, BORDER_SIZE + TITLE_BAR_HEIGHT, 0.0],
-            scale: [self.size[0] - BORDER_SIZE * 2.0, self.size[1] - BORDER_SIZE * 2.0 - TITLE_BAR_HEIGHT],
+            scale: [
+                self.size[0] - BORDER_SIZE * 2.0,
+                self.size[1] - BORDER_SIZE * 2.0 - TITLE_BAR_HEIGHT,
+            ],
             color: [0.1, 0.1, 0.1],
         });
-        self.internal_ctx.draw_rect(ColoredRect { // title bar
+        // title bar
+        self.internal_ctx.draw_rect(ColoredRect {
             translate: [BORDER_SIZE, BORDER_SIZE, 0.0],
             scale: [self.size[0] - BORDER_SIZE * 2.0, TITLE_BAR_HEIGHT],
             color: [0.0, 0.0, 0.0],
