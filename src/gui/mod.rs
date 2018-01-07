@@ -19,8 +19,8 @@ use std::sync::{Arc, Mutex};
 use gfx;
 use gfx::texture;
 use gfx::traits::{Factory, FactoryExt};
-use gfx::{Bind, CommandBuffer, Device, Encoder, IntoIndexBuffer, PipelineState, Resources, Slice};
-use gfx::memory::Usage;
+use gfx::{CommandBuffer, Device, Encoder, IntoIndexBuffer, PipelineState, Resources, Slice};
+use gfx::memory::{Bind, Usage};
 use gfx::buffer::Role;
 use gfx::handle::{Buffer, DepthStencilView, RenderTargetView, Sampler, ShaderResourceView, Texture};
 use gfx_window_glutin as gfx_glutin;
@@ -32,8 +32,9 @@ pub fn gui_main() {
     main_loop(&mut model);
 }
 
-type Graph = mf::Graph<Mutex<Box<GuiModule>>>;
-type Interface = mf::Interface<Mutex<Box<GuiModule>>>;
+type OwnedModule = Mutex<Box<GuiModule>>;
+type Graph = mf::Graph<OwnedModule>;
+type Interface = mf::Interface<OwnedModule>;
 
 /// Model holds info about GUI state
 /// and program state
@@ -43,6 +44,7 @@ struct Model {
     window_size: [f32; 2],
     mouse_pos: [f32; 2],
     node_z: Vec<mf::NodeId>,
+    module_types: Vec<mf::MetaModule<OwnedModule>>,
 }
 
 impl Model {
@@ -53,6 +55,7 @@ impl Model {
             window_size: [0.0, 0.0],
             mouse_pos: [0.0, 0.0],
             node_z: Vec::new(),
+            module_types: Vec::new(),
         }
     }
 
@@ -115,6 +118,7 @@ impl Model {
                 CursorMoved {
                     device_id: _,
                     position,
+                    modifiers: _,
                 } => {
                     self.mouse_pos = [position.0 as f32, position.1 as f32];
                 }
@@ -122,6 +126,7 @@ impl Model {
                     device_id: _,
                     state,
                     button,
+                    modifiers: _,
                 } => {
                     self.handle_mouse_input(&state, &button);
                 }
@@ -129,6 +134,16 @@ impl Model {
             },
             _ => (),
         }
+    }
+    fn load_metamodules(&mut self, ctx: RenderContext) {
+        let mod_ctx = ctx.clone();
+        let test_module = mf::MetaModule::new(
+            "TestModule",
+            Arc::new(move |ifc| {
+                Mutex::new(Box::new(GuiModuleWrapper::new(TestModule::new(ifc), mod_ctx.clone())) as Box<GuiModule>)
+            }),
+        );
+        self.module_types.push(test_module);
     }
 }
 
@@ -148,40 +163,18 @@ fn main_loop(model: &mut Model) {
     // init rendering pipeline
     let mut ctx = RenderContext::new(factory.clone());
 
-    let mod_ctx = ctx.clone();
-    model.graph.add_node(&mf::MetaModule::new(
-        "foo",
-        Arc::new(move |ifc| {
-            Mutex::new(Box::new(GuiModuleWrapper::new(
-                TestModule::new(ifc),
-                mod_ctx.clone(),
-            )))
-        }),
-    ));
-    let mod_ctx = ctx.clone();
-    model.graph.add_node(&mf::MetaModule::new(
-        "bar",
-        Arc::new(move |ifc| {
-            let mut w = GuiModuleWrapper::new(TestModule::new(ifc), mod_ctx.clone());
-            w.window_rect.translate[0] = 256.0;
-            Mutex::new(Box::new(w))
-        }),
-    ));
-    let mod_ctx = ctx.clone();
-    model.graph.add_node(&mf::MetaModule::new(
-        "baz",
-        Arc::new(move |ifc| {
-            let mut w = GuiModuleWrapper::new(TestModule::new(ifc), mod_ctx.clone());
-            w.window_rect.translate[0] = 512.0;
-            Mutex::new(Box::new(w))
-        }),
-    ));
+    model.load_metamodules(ctx.clone());
+    model.graph.add_node(&model.module_types[0]);
+    model.graph.add_node(&model.module_types[0]);
+    model.graph.add_node(&model.module_types[0]);
+    model.graph.add_node(&model.module_types[0]);
 
     // begin main loop
     let mut running = true;
     let timer = Instant::now();
     let mut frames = VecDeque::new();
     while running {
+        // update fps
         let now = timer.elapsed();
         model.time = now.as_secs() as f32 + now.subsec_nanos() as f32 / 1_000_000_000.0;
         frames.push_back(model.time);
@@ -192,11 +185,8 @@ fn main_loop(model: &mut Model) {
                 break;
             }
         }
-        model.update();
-        for node in model.graph.nodes() {
-            let mut module = node.module().lock().unwrap();
-            module.update(&model);
-        }
+
+        // handle events
         events_loop.poll_events(|event| {
             model.handle(&event);
             for node in model.graph.nodes() {
@@ -219,8 +209,16 @@ fn main_loop(model: &mut Model) {
             }
         });
 
+        // update model
+        model.update();
+        for node in model.graph.nodes() {
+            let mut module = node.module().lock().unwrap();
+            module.update(&model);
+        }
+
         ctx.begin_frame(&target);
 
+        // render nodes
         let mut z_idx = 0;
         let graph_nodes = model.graph.node_map();
         for id in &model.node_z {
@@ -233,6 +231,9 @@ fn main_loop(model: &mut Model) {
                 None => (), // node was removed between call to model.update() and here. safe to ignore
             }
         }
+
+        // render global widgets
+
 
         // debug text
         ctx.draw_text(
@@ -281,7 +282,7 @@ impl<T: Module> GuiModuleWrapper<T> {
             .create_texture(
                 texture::Kind::D2(size[0] as u16, size[1] as u16, texture::AaMode::Single),
                 1, //levels
-                gfx::RENDER_TARGET | gfx::SHADER_RESOURCE,
+                Bind::RENDER_TARGET | Bind::SHADER_RESOURCE,
                 Usage::Data,
                 Some(gfx::format::ChannelType::Unorm),
             )
@@ -305,7 +306,7 @@ impl<T: Module> GuiModuleWrapper<T> {
             .create_texture(
                 texture::Kind::D2(size[0] as u16, size[1] as u16, texture::AaMode::Single),
                 1, //levels
-                gfx::DEPTH_STENCIL,
+                Bind::DEPTH_STENCIL,
                 Usage::Data,
                 Some(gfx::format::ChannelType::Unorm),
             )

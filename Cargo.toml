@@ -17,7 +17,7 @@ modular-flow = { path = "../modular-flow" }
 glutin = "*"
 gfx = "*"
 gfx_window_glutin = "*"
-gfx_text = "*"
+gfx_text = { git = "https://github.com/PistonDevelopers/gfx_text" }
 gfx_device_gl = "*"
 
 [dependencies.serde]
