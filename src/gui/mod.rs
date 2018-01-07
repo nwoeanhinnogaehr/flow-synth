@@ -32,7 +32,7 @@ pub fn gui_main() {
     main_loop(&mut model);
 }
 
-type OwnedModule = Mutex<Box<GuiModule>>;
+type OwnedModule = Mutex<Box<GuiElement>>;
 type Graph = mf::Graph<OwnedModule>;
 type Interface = mf::Interface<OwnedModule>;
 
@@ -141,7 +141,7 @@ impl Model {
             "TestModule",
             Arc::new(move |ifc| {
                 Mutex::new(
-                    Box::new(GuiModuleWrapper::new(TestModule::new(ifc), mod_ctx.clone())) as Box<GuiModule>,
+                    Box::new(GuiModuleWrapper::new(TestModule::new(ifc), mod_ctx.clone())) as Box<GuiElement>,
                 )
             }),
         );
@@ -256,7 +256,7 @@ fn main_loop(model: &mut Model) {
 const TITLE_BAR_HEIGHT: f32 = 24.0;
 const BORDER_SIZE: f32 = 1.0;
 
-trait GuiModule: Module {
+trait GuiElement {
     fn render(&mut self, &mut gl::Device, &mut RenderContext, f32);
     fn window_rect(&self) -> &Rect;
 
@@ -374,7 +374,7 @@ impl<T: Module> GuiModuleWrapper<T> {
     }
 }
 
-impl<T> GuiModule for GuiModuleWrapper<T>
+impl<T> GuiElement for GuiModuleWrapper<T>
 where
     T: Module,
 {
