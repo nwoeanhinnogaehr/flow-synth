@@ -1,4 +1,5 @@
 mod render;
+mod menu;
 
 use self::render::*;
 use super::module::*;
@@ -45,6 +46,7 @@ struct Model {
     mouse_pos: [f32; 2],
     node_z: Vec<mf::NodeId>,
     module_types: Vec<mf::MetaModule<OwnedModule>>,
+    menu: menu::MenuManager,
 }
 
 impl Model {
@@ -56,6 +58,7 @@ impl Model {
             mouse_pos: [0.0, 0.0],
             node_z: Vec::new(),
             module_types: Vec::new(),
+            menu: menu::MenuManager::new(),
         }
     }
 
@@ -87,8 +90,7 @@ impl Model {
             idx -= 1;
             if let Some(node) = graph_nodes.get(id) {
                 let mut module = node.module().lock().unwrap();
-                let rect = *module.window_rect();
-                if point_in_rect(self.mouse_pos, &rect) {
+                if module.intersect(self.mouse_pos) {
                     module.handle_click(self, state, button);
                     hit = true;
                     break;
@@ -239,6 +241,7 @@ fn main_loop(model: &mut Model) {
         }
 
         // render global widgets
+        model.menu.render(&mut device, &mut ctx, 0.0);
 
         // debug text
         ctx.draw_text(
@@ -258,7 +261,7 @@ const BORDER_SIZE: f32 = 1.0;
 
 trait GuiElement {
     fn render(&mut self, &mut gl::Device, &mut RenderContext, f32);
-    fn window_rect(&self) -> &Rect;
+    fn intersect(&self, point: [f32; 2]) -> bool;
 
     fn update(&mut self, model: &Model);
     fn handle(&mut self, model: &Model, event: &glutin::Event);
@@ -420,8 +423,8 @@ where
             _ => {}
         }
     }
-    fn window_rect(&self) -> &Rect {
-        &self.window_rect
+    fn intersect(&self, point: [f32; 2]) -> bool {
+        point_in_rect(point, &self.window_rect)
     }
 }
 impl<T> Module for GuiModuleWrapper<T>
