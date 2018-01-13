@@ -322,6 +322,91 @@ impl Clone for RenderContext {
     }
 }
 
+pub struct TextureTarget {
+    ctx: RenderContext,
+    target_texture: Texture<gl::Resources, gfx::format::R8_G8_B8_A8>,
+    depth_texture: Texture<gl::Resources, gfx::format::D24_S8>,
+    target_resource: ShaderResourceView<gl::Resources, [f32; 4]>,
+    target: Target,
+    size: [f32; 2],
+}
+
+impl TextureTarget {
+    pub fn new(ctx: RenderContext, size: [f32; 2]) -> TextureTarget {
+        let mut factory = ctx.factory().clone();
+        let target_texture = factory
+            .create_texture(
+                texture::Kind::D2(size[0] as u16, size[1] as u16, texture::AaMode::Single),
+                1, //levels
+                Bind::RENDER_TARGET | Bind::SHADER_RESOURCE,
+                Usage::Data,
+                Some(gfx::format::ChannelType::Unorm),
+            )
+            .unwrap();
+        let color_target = factory
+            .view_texture_as_render_target(
+                &target_texture,
+                0,    //level
+                None, //layer
+            )
+            .unwrap();
+        let target_resource = factory
+            .view_texture_as_shader_resource::<gfx::format::Rgba8>(
+                &target_texture,
+                (0, 0), // levels
+                gfx::format::Swizzle::new(),
+            )
+            .unwrap();
+        let depth_texture = factory
+            .create_texture(
+                texture::Kind::D2(size[0] as u16, size[1] as u16, texture::AaMode::Single),
+                1, //levels
+                Bind::DEPTH_STENCIL,
+                Usage::Data,
+                Some(gfx::format::ChannelType::Unorm),
+            )
+            .unwrap();
+        let depth_target = factory
+            .view_texture_as_depth_stencil(
+                &depth_texture,
+                0,    //level
+                None, //layer
+                texture::DepthStencilFlags::empty(),
+            )
+            .unwrap();
+        let target = Target {
+            color: color_target,
+            depth: depth_target,
+        };
+        TextureTarget {
+            ctx,
+            target_resource,
+            target_texture,
+            depth_texture,
+            target,
+            size,
+        }
+    }
+    pub fn ctx(&mut self) -> &mut RenderContext {
+        &mut self.ctx
+    }
+    pub fn target(&self) -> &Target {
+        &self.target
+    }
+    pub fn shader_resource(&self) -> &ShaderResourceView<gl::Resources, [f32; 4]> {
+        &self.target_resource
+    }
+    pub fn begin_frame(&mut self) {
+        self.ctx.begin_frame(&self.target);
+    }
+    pub fn end_frame(&mut self, device: &mut gl::Device) {
+        self.ctx.end_frame(device, &self.target);
+    }
+    pub fn size(&self) -> [f32; 2] {
+        self.size
+    }
+}
+
 pub fn point_in_rect(pos: [f32; 2], rect: &Rect) -> bool {
     pos[0] >= rect.translate[0] && pos[0] <= rect.translate[0] + rect.scale[0] && pos[1] >= rect.translate[1]
         && pos[1] <= rect.translate[1] + rect.scale[1]

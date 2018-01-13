@@ -3,6 +3,7 @@ mod menu;
 
 use self::render::*;
 use super::module::*;
+use self::menu::{Menu, MenuManager, MenuView};
 
 use glutin::{self, Api, ContextBuilder, ControlFlow, EventsLoop, GlContext, GlRequest, Window,
              WindowBuilder, WindowEvent};
@@ -46,7 +47,7 @@ struct Model {
     mouse_pos: [f32; 2],
     node_z: Vec<mf::NodeId>,
     module_types: Vec<mf::MetaModule<OwnedModule>>,
-    menu: menu::MenuManager,
+    menu: MenuManager,
 }
 
 impl Model {
@@ -58,7 +59,7 @@ impl Model {
             mouse_pos: [0.0, 0.0],
             node_z: Vec::new(),
             module_types: Vec::new(),
-            menu: menu::MenuManager::new(),
+            menu: MenuManager::new(),
         }
     }
 
@@ -173,6 +174,16 @@ fn main_loop(model: &mut Model) {
     model.graph.add_node(&model.module_types[0]);
     model.graph.add_node(&model.module_types[0]);
 
+    model.menu.open(MenuView::new(
+        ctx.clone(),
+        [267.0; 2],
+        Menu::new(&[
+            menu::item("foo"),
+            menu::sub_menu("sub", &[menu::item("1"), menu::item("2")]),
+            menu::item("bar"),
+        ]),
+    ));
+
     // begin main loop
     let mut running = true;
     let timer = Instant::now();
@@ -270,71 +281,22 @@ trait GuiElement {
 struct GuiModuleWrapper<T: Module> {
     module: T,
 
+    target: TextureTarget,
+
     window_rect: Rect,
     size: [f32; 2],
     drag: Option<[f32; 2]>,
     dirty: bool,
-
-    internal_ctx: RenderContext,
-    module_target_texture: Texture<gl::Resources, gfx::format::R8_G8_B8_A8>,
-    module_depth_texture: Texture<gl::Resources, gfx::format::D24_S8>,
-    module_target_resource: ShaderResourceView<gl::Resources, [f32; 4]>,
-    module_target: Target,
 }
 
 impl<T: Module> GuiModuleWrapper<T> {
     fn new(module: T, ctx: RenderContext) -> GuiModuleWrapper<T> {
-        let mut factory = ctx.factory().clone();
         let size = [256.0; 2];
-        let module_target_texture = factory
-            .create_texture(
-                texture::Kind::D2(size[0] as u16, size[1] as u16, texture::AaMode::Single),
-                1, //levels
-                Bind::RENDER_TARGET | Bind::SHADER_RESOURCE,
-                Usage::Data,
-                Some(gfx::format::ChannelType::Unorm),
-            )
-            .unwrap();
-        let module_color_target = factory
-            .view_texture_as_render_target(
-                &module_target_texture,
-                0,    //level
-                None, //layer
-            )
-            .unwrap();
-        let module_target_resource = factory
-            .view_texture_as_shader_resource::<gfx::format::Rgba8>(
-                &module_target_texture,
-                (0, 0), // levels
-                gfx::format::Swizzle::new(),
-            )
-            .unwrap();
-
-        let module_depth_texture = factory
-            .create_texture(
-                texture::Kind::D2(size[0] as u16, size[1] as u16, texture::AaMode::Single),
-                1, //levels
-                Bind::DEPTH_STENCIL,
-                Usage::Data,
-                Some(gfx::format::ChannelType::Unorm),
-            )
-            .unwrap();
-        let module_depth_target = factory
-            .view_texture_as_depth_stencil(
-                &module_depth_texture,
-                0,    //level
-                None, //layer
-                texture::DepthStencilFlags::empty(),
-            )
-            .unwrap();
-
-        let module_target = Target {
-            color: module_color_target,
-            depth: module_depth_target,
-        };
+        let target = TextureTarget::new(ctx, size);
 
         GuiModuleWrapper {
             module,
+            target,
             window_rect: Rect {
                 translate: [0.0, 0.0, 0.0],
                 scale: size,
@@ -342,22 +304,19 @@ impl<T: Module> GuiModuleWrapper<T> {
             size,
             drag: None,
             dirty: true,
-            internal_ctx: ctx,
-            module_target_resource,
-            module_target_texture,
-            module_depth_texture,
-            module_target,
         }
     }
     fn render_self(&mut self) {
+        let title = &self.title();
+        let ctx = self.target.ctx();
         // borders
-        self.internal_ctx.draw_rect(ColoredRect {
+        ctx.draw_rect(ColoredRect {
             translate: [0.0, 0.0, 0.0],
             scale: self.size,
             color: [1.0, 1.0, 1.0],
         });
         // background
-        self.internal_ctx.draw_rect(ColoredRect {
+        ctx.draw_rect(ColoredRect {
             translate: [BORDER_SIZE, BORDER_SIZE + TITLE_BAR_HEIGHT, 0.0],
             scale: [
                 self.size[0] - BORDER_SIZE * 2.0,
@@ -366,14 +325,12 @@ impl<T: Module> GuiModuleWrapper<T> {
             color: [0.1, 0.1, 0.1],
         });
         // title bar
-        self.internal_ctx.draw_rect(ColoredRect {
+        ctx.draw_rect(ColoredRect {
             translate: [BORDER_SIZE, BORDER_SIZE, 0.0],
             scale: [self.size[0] - BORDER_SIZE * 2.0, TITLE_BAR_HEIGHT],
             color: [0.0, 0.0, 0.0],
         });
-        let title = &self.title();
-        self.internal_ctx
-            .draw_text(title, [4.0, 4.0], [1.0, 1.0, 1.0]);
+        ctx.draw_text(title, [4.0, 4.0], [1.0, 1.0, 1.0]);
     }
 }
 
@@ -383,14 +340,14 @@ where
 {
     fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, z_idx: f32) {
         if self.dirty {
-            self.internal_ctx.begin_frame(&self.module_target);
+            self.target.begin_frame();
             self.render_self();
-            self.internal_ctx.end_frame(device, &self.module_target);
+            self.target.end_frame(device);
             self.dirty = false;
         }
 
         self.window_rect.translate[2] = z_idx;
-        ctx.draw_textured_rect(self.window_rect, self.module_target_resource.clone());
+        ctx.draw_textured_rect(self.window_rect, self.target.shader_resource().clone());
     }
     fn update(&mut self, model: &Model) {
         if let Some(drag) = self.drag {
