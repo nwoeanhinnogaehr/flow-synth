@@ -21,8 +21,6 @@ use gfx_device_gl as gl;
 pub type ColorFormat = gfx::format::Rgba8;
 pub type DepthFormat = gfx::format::DepthStencil;
 
-const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
-
 gfx_defines! {
     vertex Vertex {
         pos: [f32; 2] = "a_Pos",
@@ -38,7 +36,7 @@ gfx_defines! {
         resolution: gfx::Global<[f32; 2]> = "i_Resolution",
         vertices: gfx::VertexBuffer<Vertex> = (),
         instances: gfx::InstanceBuffer<ColoredRect> = (),
-        out: gfx::RenderTarget<ColorFormat> = "Target0",
+        out: gfx::BlendTarget<ColorFormat> = ("Target0", gfx::state::ColorMask::all(), gfx::preset::blend::ALPHA),
         depth: gfx::DepthTarget<DepthFormat> = gfx::state::Depth {
             fun: gfx::state::Comparison::LessEqual,
             write: true,
@@ -54,7 +52,7 @@ gfx_defines! {
         resolution: gfx::Global<[f32; 2]> = "i_Resolution",
         texture: gfx::TextureSampler<[f32; 4]> = "i_Texture",
         vertices: gfx::VertexBuffer<TexturedVertex> = (),
-        out: gfx::RenderTarget<ColorFormat> = "Target0",
+        out: gfx::BlendTarget<ColorFormat> = ("Target0", gfx::state::ColorMask::all(), gfx::preset::blend::ALPHA),
         depth: gfx::DepthTarget<DepthFormat> = gfx::state::Depth {
             fun: gfx::state::Comparison::LessEqual,
             write: true,
@@ -285,7 +283,7 @@ impl RenderContext {
         }
     }
     pub fn begin_frame(&mut self, target: &Target) {
-        self.encoder.clear(&target.color, BLACK);
+        self.encoder.clear(&target.color, [0.0; 4]);
         self.encoder.clear_depth(&target.depth, 1.0);
     }
     pub fn draw_text(&mut self, text: &str, pos: [f32; 2], color: [f32; 3]) {
