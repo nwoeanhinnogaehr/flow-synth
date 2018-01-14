@@ -47,7 +47,7 @@ struct Model {
     mouse_pos: [f32; 2],
     node_z: Vec<mf::NodeId>,
     module_types: Vec<mf::MetaModule<OwnedModule>>,
-    menu: MenuManager,
+    menu: Mutex<MenuManager>,
 }
 
 impl Model {
@@ -59,7 +59,7 @@ impl Model {
             mouse_pos: [0.0, 0.0],
             node_z: Vec::new(),
             module_types: Vec::new(),
-            menu: MenuManager::new(),
+            menu: Mutex::new(MenuManager::new()),
         }
     }
 
@@ -79,6 +79,12 @@ impl Model {
     }
     fn update(&mut self) {
         self.update_depth();
+        for node in self.graph.nodes() {
+            let mut module = node.module().lock().unwrap();
+            module.update(self);
+        }
+        let mut menu = self.menu.lock().unwrap();
+        menu.update(self);
     }
 
     fn handle_mouse_input(&mut self, state: &glutin::ElementState, button: &glutin::MouseButton) {
@@ -174,12 +180,23 @@ fn main_loop(model: &mut Model) {
     model.graph.add_node(&model.module_types[0]);
     model.graph.add_node(&model.module_types[0]);
 
-    model.menu.open(MenuView::new(
+    model.menu.lock().unwrap().open(MenuView::new(
         ctx.clone(),
         [267.0; 2],
         Menu::new(&[
             menu::item("foo"),
-            menu::sub_menu("sub", &[menu::item("1"), menu::item("2")]),
+            menu::sub_menu(
+                "bag",
+                &[
+                    menu::item("1"),
+                    menu::item("2"),
+                    menu::item("3"),
+                    menu::item("4"),
+                    menu::sub_menu("sub", &[menu::item("1"), menu::item("2"), menu::item("3")]),
+                    menu::item("5"),
+                ],
+            ),
+            menu::sub_menu("sub", &[menu::item("1"), menu::item("2"), menu::item("3")]),
             menu::item("bar"),
         ]),
     ));
@@ -226,10 +243,6 @@ fn main_loop(model: &mut Model) {
 
         // update model
         model.update();
-        for node in model.graph.nodes() {
-            let mut module = node.module().lock().unwrap();
-            module.update(&model);
-        }
 
         ctx.begin_frame(&target);
 
@@ -252,7 +265,11 @@ fn main_loop(model: &mut Model) {
         }
 
         // render global widgets
-        model.menu.render(&mut device, &mut ctx, 0.0);
+        model
+            .menu
+            .lock()
+            .unwrap()
+            .render(&mut device, &mut ctx, 0.0);
 
         // debug text
         ctx.draw_text(
