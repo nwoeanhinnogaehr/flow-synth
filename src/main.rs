@@ -4,6 +4,7 @@
 #![feature(fnbox)]
 #![feature(const_fn)]
 #![feature(universal_impl_trait)]
+#![feature(conservative_impl_trait)]
 #![feature(generators)]
 #![feature(generator_trait)]
 #![feature(match_default_bindings)]

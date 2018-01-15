@@ -50,6 +50,18 @@ pub fn sub_menu(label: &str, items: &[MenuItem]) -> MenuItem {
     MenuItem::new(label.into(), Some(Menu::new(items)))
 }
 
+fn with_item_pos<T>(iter: impl Iterator<Item = T>, offset: [f32; 2]) -> impl Iterator<Item = (T, [f32; 2])> {
+    iter.enumerate().map(move |(idx, item)| {
+        (
+            item,
+            [
+                offset[0],
+                offset[1] + idx as f32 * (ITEM_HEIGHT - BORDER_SIZE),
+            ],
+        )
+    })
+}
+
 #[derive(Clone, PartialEq)]
 pub struct Menu {
     items: Vec<MenuItem>,
@@ -131,11 +143,7 @@ impl MenuView {
         }
     }
     fn render_menu(ctx: &mut RenderContext, menu: &mut Menu, offset: [f32; 2]) {
-        for (idx, item) in menu.items.iter_mut().enumerate() {
-            let pos = [
-                offset[0],
-                offset[1] + idx as f32 * (ITEM_HEIGHT - BORDER_SIZE),
-            ];
+        for (item, pos) in with_item_pos(menu.items.iter_mut(), offset) {
             // borders
             ctx.draw_rect(ColoredRect {
                 translate: [pos[0], pos[1], 0.0],
@@ -186,11 +194,7 @@ impl MenuView {
         false
     }
     fn update_menu(model: &Model, menu: &mut Menu, offset: [f32; 2]) {
-        for (idx, item) in menu.items.iter_mut().enumerate() {
-            let pos = [
-                offset[0],
-                offset[1] + idx as f32 * (ITEM_HEIGHT - BORDER_SIZE),
-            ];
+        for (item, pos) in with_item_pos(menu.items.iter_mut(), offset) {
             item.hover = point_in_rect(
                 model.mouse_pos,
                 &Rect {
@@ -217,18 +221,12 @@ impl MenuView {
         }
         // Find most recently hovered item with a submenu and update it
         // I sure hope time isn't ever NaN
-        let sub_menu = menu.items
-            .iter_mut()
-            .enumerate()
-            .max_by(|(_, item1), (_, item2)| item1.hover_time.partial_cmp(&item2.hover_time).unwrap());
-        sub_menu.map(|(idx, item)| {
+        let sub_menu = with_item_pos(menu.items.iter_mut(), offset)
+            .max_by(|(item1, _), (item2, _)| item1.hover_time.partial_cmp(&item2.hover_time).unwrap());
+        sub_menu.map(|(item, pos)| {
             let hover_time = item.hover_time;
             if let Some(menu) = item.sub_menu_mut() {
                 if model.time - hover_time < HOVER_TIMEOUT || menu.any_children_hovered() {
-                    let pos = [
-                        offset[0],
-                        offset[1] + idx as f32 * (ITEM_HEIGHT - BORDER_SIZE),
-                    ];
                     Self::update_menu(model, menu, [pos[0] + ITEM_WIDTH - BORDER_SIZE, pos[1]]);
                     menu.open = true;
                 }
