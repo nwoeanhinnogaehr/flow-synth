@@ -190,8 +190,24 @@ impl MenuView {
         };
         ctx.draw_textured_rect(window_rect, self.target.shader_resource().clone());
     }
-    fn intersect(&self, point: [f32; 2]) -> bool {
-        false
+    fn intersect_impl<'a>(&self, menu: &'a Menu, offset: [f32; 2], path: &mut Vec<&'a str>) {
+        for (item, pos) in with_item_pos(menu.items.iter(), offset) {
+            if let Some(sub_menu) = item.sub_menu() {
+                if sub_menu.open && sub_menu.any_children_hovered() || item.hover {
+                    path.push(item.label());
+                    self.intersect_impl(sub_menu, [pos[0] + ITEM_WIDTH - BORDER_SIZE, pos[1]], path);
+                }
+            } else {
+                if item.hover {
+                    path.push(item.label());
+                }
+            }
+        }
+    }
+    fn intersect(&self, mut offset: [f32; 2]) -> Vec<&str> {
+        let mut path = Vec::new();
+        self.intersect_impl(&self.menu, offset, &mut path);
+        path
     }
     fn update_menu(model: &Model, menu: &mut Menu, offset: [f32; 2]) {
         for (item, pos) in with_item_pos(menu.items.iter_mut(), offset) {
@@ -244,14 +260,15 @@ impl MenuView {
 // but there can be submenus
 pub struct MenuManager {
     menu: Option<MenuView>,
+    ctx: RenderContext,
 }
 
 impl MenuManager {
-    pub fn new() -> MenuManager {
-        MenuManager { menu: None }
+    pub fn new(ctx: RenderContext) -> MenuManager {
+        MenuManager { menu: None, ctx }
     }
-    pub fn open(&mut self, menu: MenuView) {
-        self.menu = Some(menu);
+    pub fn open(&mut self, menu: Menu, pos: [f32; 2]) {
+        self.menu = Some(MenuView::new(self.ctx.clone(), pos, menu));
     }
 }
 
@@ -262,10 +279,11 @@ impl GuiElement for MenuManager {
             .map(|menu| menu.render(device, ctx, depth));
     }
     fn intersect(&self, point: [f32; 2]) -> bool {
-        self.menu
+        let out = self.menu
             .as_ref()
-            .map(|menu| menu.intersect(point))
-            .unwrap_or(false)
+            .map(|menu| !menu.intersect(point).is_empty())
+            .unwrap_or(false);
+        out
     }
     fn update(&mut self, model: &Model) {
         self.menu.as_mut().map(|menu| menu.update(model));

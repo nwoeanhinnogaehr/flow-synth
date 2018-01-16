@@ -29,11 +29,6 @@ use gfx_window_glutin as gfx_glutin;
 use gfx_text;
 use gfx_device_gl as gl;
 
-pub fn gui_main() {
-    let mut model = Model::new();
-    main_loop(&mut model);
-}
-
 type OwnedModule = Mutex<Box<GuiElement>>;
 type Graph = mf::Graph<OwnedModule>;
 type Interface = mf::Interface<OwnedModule>;
@@ -41,6 +36,7 @@ type Interface = mf::Interface<OwnedModule>;
 /// Model holds info about GUI state
 /// and program state
 struct Model {
+    ctx: RenderContext,
     time: f32,
     graph: Arc<Graph>,
     window_size: [f32; 2],
@@ -51,15 +47,16 @@ struct Model {
 }
 
 impl Model {
-    fn new() -> Model {
+    fn new(ctx: RenderContext) -> Model {
         Model {
+            ctx: ctx.clone(),
             graph: Graph::new(),
             time: 0.0,
             window_size: [0.0, 0.0],
             mouse_pos: [0.0, 0.0],
             node_z: Vec::new(),
-            module_types: Vec::new(),
-            menu: Mutex::new(MenuManager::new()),
+            module_types: load_metamodules(ctx.clone()),
+            menu: Mutex::new(MenuManager::new(ctx)),
         }
     }
 
@@ -89,6 +86,10 @@ impl Model {
 
     fn handle_mouse_input(&mut self, state: &glutin::ElementState, button: &glutin::MouseButton) {
         use glutin::*;
+
+        if self.menu.lock().unwrap().intersect(self.mouse_pos) {
+            return;
+        }
 
         let graph_nodes = self.graph.node_map();
         let mut hit = false;
@@ -144,21 +145,24 @@ impl Model {
             _ => (),
         }
     }
-    fn load_metamodules(&mut self, ctx: RenderContext) {
-        let mod_ctx = ctx.clone();
-        let test_module = mf::MetaModule::new(
-            "TestModule",
-            Arc::new(move |ifc| {
-                Mutex::new(
-                    Box::new(GuiModuleWrapper::new(TestModule::new(ifc), mod_ctx.clone())) as Box<GuiElement>,
-                )
-            }),
-        );
-        self.module_types.push(test_module);
-    }
 }
 
-fn main_loop(model: &mut Model) {
+fn load_metamodules(ctx: RenderContext) -> Vec<mf::MetaModule<OwnedModule>> {
+    let mut modules = Vec::new();
+    let mod_ctx = ctx;
+    let test_module = mf::MetaModule::new(
+        "TestModule",
+        Arc::new(move |ifc| {
+            Mutex::new(
+                Box::new(GuiModuleWrapper::new(TestModule::new(ifc), mod_ctx.clone())) as Box<GuiElement>,
+                )
+        }),
+        );
+    modules.push(test_module);
+    modules
+}
+
+pub fn gui_main() {
     // init window
     let mut events_loop = EventsLoop::new();
     let context = ContextBuilder::new().with_gl_profile(glutin::GlProfile::Core);
@@ -174,15 +178,14 @@ fn main_loop(model: &mut Model) {
     // init rendering pipeline
     let mut ctx = RenderContext::new(factory.clone());
 
-    model.load_metamodules(ctx.clone());
+    let mut model = Model::new(ctx.clone());
+
     model.graph.add_node(&model.module_types[0]);
     model.graph.add_node(&model.module_types[0]);
     model.graph.add_node(&model.module_types[0]);
     model.graph.add_node(&model.module_types[0]);
 
-    model.menu.lock().unwrap().open(MenuView::new(
-        ctx.clone(),
-        [267.0; 2],
+    model.menu.lock().unwrap().open(
         Menu::new(&[
             menu::item("foo"),
             menu::sub_menu(
@@ -199,7 +202,8 @@ fn main_loop(model: &mut Model) {
             menu::sub_menu("sub", &[menu::item("1"), menu::item("2"), menu::item("3")]),
             menu::item("bar"),
         ]),
-    ));
+        [267.0; 2],
+    );
 
     // begin main loop
     let mut running = true;

@@ -406,8 +406,8 @@ impl TextureTarget {
 }
 
 pub fn point_in_rect(pos: [f32; 2], rect: &Rect) -> bool {
-    pos[0] >= rect.translate[0] && pos[0] <= rect.translate[0] + rect.scale[0] && pos[1] >= rect.translate[1]
-        && pos[1] <= rect.translate[1] + rect.scale[1]
+    pos[0] > rect.translate[0] && pos[0] < rect.translate[0] + rect.scale[0] && pos[1] > rect.translate[1]
+        && pos[1] < rect.translate[1] + rect.scale[1]
 }
 fn pixels_to_coords(size: [f32; 2], pix: [f32; 2]) -> [f32; 2] {
     let aspect = size[0] / size[1];
