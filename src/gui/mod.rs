@@ -3,7 +3,7 @@ mod menu;
 
 use self::render::*;
 use super::module::*;
-use self::menu::{Menu, MenuManager, MenuView};
+use self::menu::{Menu, MenuManager, MenuUpdate, MenuView};
 
 use glutin::{self, Api, ContextBuilder, ControlFlow, EventsLoop, GlContext, GlRequest, Window,
              WindowBuilder, WindowEvent};
@@ -44,6 +44,7 @@ struct Model {
     node_z: Vec<mf::NodeId>,
     module_types: Vec<mf::MetaModule<OwnedModule>>,
     menu: Mutex<MenuManager>,
+    menu_chan: Option<Receiver<MenuUpdate>>,
 }
 
 impl Model {
@@ -57,6 +58,7 @@ impl Model {
             node_z: Vec::new(),
             module_types: load_metamodules(ctx.clone()),
             menu: Mutex::new(MenuManager::new(ctx)),
+            menu_chan: None,
         }
     }
 
@@ -74,21 +76,44 @@ impl Model {
             }
         }
     }
+
+    fn handle_menu_updates(&mut self) {
+        if self.menu_chan.is_some() {
+            let chan = self.menu_chan.take().unwrap();
+            match chan.try_recv() {
+                Ok(MenuUpdate::Select(path)) => {
+                    let name = path[0].as_ref();
+                    let module = self.module_types.iter().find(|ty| ty.name == name).unwrap();
+                    self.new_module(module, self.mouse_pos);
+                }
+                Ok(MenuUpdate::Abort) => {}
+                _ => {
+                    self.menu_chan = Some(chan);
+                }
+            }
+        }
+    }
+
     fn update(&mut self) {
         self.update_depth();
         for node in self.graph.nodes() {
             let mut module = node.module().lock().unwrap();
             module.update(self);
         }
-        let mut menu = self.menu.lock().unwrap();
-        menu.update(self);
+        self.menu.lock().unwrap().update(self);
+        self.handle_menu_updates();
     }
 
     fn handle_mouse_input(&mut self, state: &glutin::ElementState, button: &glutin::MouseButton) {
         use glutin::*;
 
-        if self.menu.lock().unwrap().intersect(self.mouse_pos) {
-            return;
+        // intersect menu
+        {
+            let mut menu = self.menu.lock().unwrap();
+            if menu.intersect(self.mouse_pos) {
+                menu.handle_click(self, state, button);
+                return;
+            }
         }
 
         let graph_nodes = self.graph.node_map();
@@ -106,11 +131,38 @@ impl Model {
             }
         }
         if hit {
-            if let ElementState::Pressed = state {
+            if ElementState::Pressed == *state {
                 let removed = self.node_z.remove(idx);
                 self.node_z.push(removed);
             }
         }
+
+        // right click - open menu
+        if ElementState::Pressed == *state && MouseButton::Right == *button {
+            self.open_new_module_menu();
+        }
+        // left click - abort menu
+        if ElementState::Pressed == *state && MouseButton::Left == *button {
+            self.menu.lock().unwrap().abort();
+        }
+    }
+
+    fn new_module(&self, meta: &mf::MetaModule<OwnedModule>, pos: [f32; 2]) {
+        let node = self.graph.add_node(meta);
+        let mut module = node.module().lock().unwrap();
+        module.set_pos(pos);
+    }
+
+    fn open_new_module_menu(&mut self) {
+        self.menu_chan = Some(
+            self.menu.lock().unwrap().open(
+                Menu::new(&self.module_types
+                    .iter()
+                    .map(|ty| menu::item(&ty.name))
+                    .collect::<Vec<_>>()),
+                self.mouse_pos,
+            ),
+        );
     }
 
     fn handle(&mut self, event: &glutin::Event) {
@@ -155,9 +207,9 @@ fn load_metamodules(ctx: RenderContext) -> Vec<mf::MetaModule<OwnedModule>> {
         Arc::new(move |ifc| {
             Mutex::new(
                 Box::new(GuiModuleWrapper::new(TestModule::new(ifc), mod_ctx.clone())) as Box<GuiElement>,
-                )
+            )
         }),
-        );
+    );
     modules.push(test_module);
     modules
 }
@@ -179,31 +231,6 @@ pub fn gui_main() {
     let mut ctx = RenderContext::new(factory.clone());
 
     let mut model = Model::new(ctx.clone());
-
-    model.graph.add_node(&model.module_types[0]);
-    model.graph.add_node(&model.module_types[0]);
-    model.graph.add_node(&model.module_types[0]);
-    model.graph.add_node(&model.module_types[0]);
-
-    model.menu.lock().unwrap().open(
-        Menu::new(&[
-            menu::item("foo"),
-            menu::sub_menu(
-                "bag",
-                &[
-                    menu::item("1"),
-                    menu::item("2"),
-                    menu::item("3"),
-                    menu::item("4"),
-                    menu::sub_menu("sub", &[menu::item("1"), menu::item("2"), menu::item("3")]),
-                    menu::item("5"),
-                ],
-            ),
-            menu::sub_menu("sub", &[menu::item("1"), menu::item("2"), menu::item("3")]),
-            menu::item("bar"),
-        ]),
-        [267.0; 2],
-    );
 
     // begin main loop
     let mut running = true;
@@ -292,9 +319,9 @@ const TITLE_BAR_HEIGHT: f32 = 24.0;
 const BORDER_SIZE: f32 = 1.0;
 
 trait GuiElement {
+    fn set_pos(&mut self, pos: [f32; 2]);
     fn render(&mut self, &mut gl::Device, &mut RenderContext, f32);
     fn intersect(&self, point: [f32; 2]) -> bool;
-
     fn update(&mut self, model: &Model);
     fn handle(&mut self, model: &Model, event: &glutin::Event);
     fn handle_click(&mut self, model: &Model, state: &glutin::ElementState, button: &glutin::MouseButton);
@@ -359,6 +386,10 @@ impl<T> GuiElement for GuiModuleWrapper<T>
 where
     T: Module,
 {
+    fn set_pos(&mut self, pos: [f32; 2]) {
+        self.window_rect.translate[0] = pos[0];
+        self.window_rect.translate[1] = pos[1];
+    }
     fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, z_idx: f32) {
         if self.dirty {
             self.target.begin_frame();

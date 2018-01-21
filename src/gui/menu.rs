@@ -1,6 +1,8 @@
 use super::{GuiElement, Model, Rect, RenderContext};
 use super::render::*;
 
+use std::sync::mpsc::{channel, Receiver, Sender};
+
 use gfx_device_gl as gl;
 use glutin;
 
@@ -127,10 +129,11 @@ pub struct MenuView {
     pos: [f32; 2],
     target: TextureTarget,
     dirty: bool,
+    chan: Sender<MenuUpdate>,
 }
 
 impl MenuView {
-    pub fn new(ctx: RenderContext, pos: [f32; 2], menu: Menu) -> MenuView {
+    pub fn new(ctx: RenderContext, pos: [f32; 2], menu: Menu, chan: Sender<MenuUpdate>) -> MenuView {
         let size = [
             ITEM_WIDTH * menu.width() as f32,
             ITEM_HEIGHT * menu.length() as f32,
@@ -140,6 +143,7 @@ impl MenuView {
             pos,
             target: TextureTarget::new(ctx, size),
             dirty: true,
+            chan,
         }
     }
     fn render_menu(ctx: &mut RenderContext, menu: &mut Menu, offset: [f32; 2]) {
@@ -256,6 +260,11 @@ impl MenuView {
     }
 }
 
+pub enum MenuUpdate {
+    Select(Vec<String>),
+    Abort,
+}
+
 // only one menu open at a time,
 // but there can be submenus
 pub struct MenuManager {
@@ -267,27 +276,45 @@ impl MenuManager {
     pub fn new(ctx: RenderContext) -> MenuManager {
         MenuManager { menu: None, ctx }
     }
-    pub fn open(&mut self, menu: Menu, pos: [f32; 2]) {
-        self.menu = Some(MenuView::new(self.ctx.clone(), pos, menu));
+    pub fn open(&mut self, menu: Menu, pos: [f32; 2]) -> Receiver<MenuUpdate> {
+        self.abort();
+        let (tx, rx) = channel();
+        self.menu = Some(MenuView::new(self.ctx.clone(), pos, menu, tx));
+        rx
+    }
+    pub fn abort(&mut self) {
+        if let Some(menu) = self.menu.take() {
+            menu.chan.send(MenuUpdate::Abort);
+        }
     }
 }
 
 impl GuiElement for MenuManager {
+    fn set_pos(&mut self, pos: [f32; 2]) {
+        self.menu.as_mut().map(|menu| menu.pos = pos);
+    }
     fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, depth: f32) {
         self.menu
             .as_mut()
             .map(|menu| menu.render(device, ctx, depth));
     }
     fn intersect(&self, point: [f32; 2]) -> bool {
-        let out = self.menu
+        self.menu
             .as_ref()
             .map(|menu| !menu.intersect(point).is_empty())
-            .unwrap_or(false);
-        out
+            .unwrap_or(false)
     }
     fn update(&mut self, model: &Model) {
         self.menu.as_mut().map(|menu| menu.update(model));
     }
     fn handle(&mut self, model: &Model, event: &glutin::Event) {}
-    fn handle_click(&mut self, model: &Model, state: &glutin::ElementState, button: &glutin::MouseButton) {}
+    fn handle_click(&mut self, model: &Model, state: &glutin::ElementState, button: &glutin::MouseButton) {
+        if *state == glutin::ElementState::Released && *button == glutin::MouseButton::Left {
+            if let Some(menu) = self.menu.take() {
+                let path = menu.intersect(model.mouse_pos);
+                menu.chan
+                    .send(MenuUpdate::Select(path.iter().map(|&x| x.into()).collect()));
+            }
+        }
+    }
 }
