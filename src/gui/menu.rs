@@ -188,7 +188,7 @@ impl MenuView {
             self.dirty = false;
         }
 
-        let window_rect = Rect {
+        let window_rect = Rect3D {
             translate: [self.pos[0], self.pos[1], depth],
             scale: self.target.size(),
         };
@@ -217,8 +217,8 @@ impl MenuView {
         for (item, pos) in with_item_pos(menu.items.iter_mut(), offset) {
             item.hover = point_in_rect(
                 model.mouse_pos,
-                &Rect {
-                    translate: [pos[0], pos[1], 0.0],
+                Rect {
+                    translate: [pos[0], pos[1]],
                     scale: [ITEM_WIDTH - BORDER_SIZE, ITEM_HEIGHT - BORDER_SIZE],
                 },
             );

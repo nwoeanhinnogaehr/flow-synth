@@ -346,7 +346,7 @@ impl<T: Module> GuiModuleWrapper<T> {
             module,
             target,
             window_rect: Rect {
-                translate: [0.0, 0.0, 0.0],
+                translate: [0.0; 2],
                 scale: size,
             },
             size,
@@ -398,8 +398,10 @@ where
             self.dirty = false;
         }
 
-        self.window_rect.translate[2] = z_idx;
-        ctx.draw_textured_rect(self.window_rect, self.target.shader_resource().clone());
+        ctx.draw_textured_rect(
+            self.window_rect.upgrade(z_idx),
+            self.target.shader_resource().clone(),
+        );
     }
     fn update(&mut self, model: &Model) {
         if let Some(drag) = self.drag {
@@ -417,7 +419,7 @@ where
                 ElementState::Pressed => {
                     let mut title_rect = self.window_rect;
                     title_rect.scale[1] = TITLE_BAR_HEIGHT + BORDER_SIZE;
-                    if point_in_rect(model.mouse_pos, &title_rect) {
+                    if point_in_rect(model.mouse_pos, title_rect) {
                         self.drag = Some([
                             model.mouse_pos[0] - self.window_rect.translate[0],
                             model.mouse_pos[1] - self.window_rect.translate[1],
@@ -432,7 +434,7 @@ where
         }
     }
     fn intersect(&self, point: [f32; 2]) -> bool {
-        point_in_rect(point, &self.window_rect)
+        point_in_rect(point, self.window_rect)
     }
 }
 impl<T> Module for GuiModuleWrapper<T>

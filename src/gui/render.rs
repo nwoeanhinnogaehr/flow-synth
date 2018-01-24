@@ -62,6 +62,21 @@ gfx_defines! {
 
 #[derive(Copy, Clone)]
 pub struct Rect {
+    pub translate: [f32; 2],
+    pub scale: [f32; 2],
+}
+
+impl Rect {
+    pub fn upgrade(self, z: f32) -> Rect3D {
+        Rect3D {
+            translate: [self.translate[0], self.translate[1], z],
+            scale: self.scale,
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct Rect3D {
     pub translate: [f32; 3],
     pub scale: [f32; 2],
 }
@@ -156,7 +171,7 @@ struct TexturedRectRenderer {
     factory: gl::Factory,
     pso: PipelineState<gl::Resources, textured_rect_pipe::Meta>,
     sampler: Sampler<gl::Resources>,
-    rects: Vec<(Rect, ShaderResourceView<gl::Resources, [f32; 4]>)>,
+    rects: Vec<(Rect3D, ShaderResourceView<gl::Resources, [f32; 4]>)>,
 }
 
 impl TexturedRectRenderer {
@@ -182,7 +197,7 @@ impl TexturedRectRenderer {
             rects: Vec::new(),
         }
     }
-    fn push(&mut self, rect: Rect, texture: ShaderResourceView<gl::Resources, [f32; 4]>) {
+    fn push(&mut self, rect: Rect3D, texture: ShaderResourceView<gl::Resources, [f32; 4]>) {
         self.rects.push((rect, texture));
     }
     fn draw(&mut self, encoder: &mut Encoder<gl::Resources, gl::CommandBuffer>, target: &Target) {
@@ -292,7 +307,7 @@ impl RenderContext {
     pub fn draw_rect(&mut self, rect: ColoredRect) {
         self.rects.push(rect);
     }
-    pub fn draw_textured_rect(&mut self, rect: Rect, texture: ShaderResourceView<gl::Resources, [f32; 4]>) {
+    pub fn draw_textured_rect(&mut self, rect: Rect3D, texture: ShaderResourceView<gl::Resources, [f32; 4]>) {
         self.textured_rects.push(rect, texture);
     }
     pub fn factory(&self) -> &gl::Factory {
@@ -405,7 +420,7 @@ impl TextureTarget {
     }
 }
 
-pub fn point_in_rect(pos: [f32; 2], rect: &Rect) -> bool {
+pub fn point_in_rect(pos: [f32; 2], rect: Rect) -> bool {
     pos[0] > rect.translate[0] && pos[0] < rect.translate[0] + rect.scale[0] && pos[1] > rect.translate[1]
         && pos[1] < rect.translate[1] + rect.scale[1]
 }
