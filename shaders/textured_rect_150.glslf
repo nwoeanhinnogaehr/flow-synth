@@ -7,5 +7,5 @@ in vec2 v_TexCoord;
 out vec4 Target0;
 
 void main() {
-    Target0 = texture2D(i_Texture, v_TexCoord);
+    Target0 = texture(i_Texture, v_TexCoord);
 }
