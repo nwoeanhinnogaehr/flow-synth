@@ -182,7 +182,7 @@ impl Model {
                     position,
                     modifiers: _,
                 } => {
-                    self.mouse_pos = [position.0 as f32, position.1 as f32];
+                    self.mouse_pos = [(position.0 as f32).floor(), (position.1 as f32).floor()];
                 }
                 MouseInput {
                     device_id: _,
@@ -404,9 +404,8 @@ where
     fn update(&mut self, model: &Model) {
         if let Some(drag) = self.drag {
             self.window_rect.translate = [
-                (-drag[0] + model.mouse_pos[0]).floor(),
-                (-drag[1] + model.mouse_pos[1]).floor(),
-                0.0,
+                -drag[0] + model.mouse_pos[0],
+                -drag[1] + model.mouse_pos[1],
             ];
         }
     }
