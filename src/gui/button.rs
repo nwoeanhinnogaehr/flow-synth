@@ -27,7 +27,14 @@ impl Button {
     }
 }
 
-impl GuiComponent<()> for Button {
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ButtonUpdate {
+    Unchanged,
+    NeedRender,
+    Clicked,
+}
+
+impl GuiComponent<ButtonUpdate> for Button {
     fn rect(&self) -> Rect2 {
         self.rect
     }
@@ -49,9 +56,16 @@ impl GuiComponent<()> for Button {
             self.target.shader_resource().clone(),
         );
     }
-    fn update(&mut self, model: &Model) {
-        let hover = self.rect.intersect(model.mouse_pos);
-        self.hover = hover;
+    fn update(&mut self, model: &Model, parent: Rect3) -> ButtonUpdate {
+        let hover = self.rect.offset(parent.project()).intersect(model.mouse_pos);
+        if self.hover != hover {
+            self.hover = hover;
+            ButtonUpdate::NeedRender
+        } else {
+            ButtonUpdate::Unchanged
+        }
     }
-    fn handle(&mut self, model: &Model, event: &glutin::Event) {}
+    fn handle(&mut self, model: &Model, parent: Rect3, event: &glutin::Event) -> ButtonUpdate {
+        ButtonUpdate::Unchanged
+    }
 }

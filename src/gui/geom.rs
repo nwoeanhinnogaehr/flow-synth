@@ -129,6 +129,7 @@ impl Rect2 {
             size: self.size,
         }
     }
+    /// upgrade to rect3 with z from other
     pub fn upgrade_with(self, other: &Rect3) -> Rect3 {
         Rect3 {
             pos: Pt3::new(self.pos.x, self.pos.y, other.pos.z),
@@ -138,6 +139,9 @@ impl Rect2 {
     pub fn intersect(&self, pt: Pt2) -> bool {
         pt.x > self.pos.x && pt.x < self.pos.x + self.size.x && pt.y > self.pos.y
             && pt.y < self.pos.y + self.size.y
+    }
+    pub fn offset(self, other: Rect2) -> Rect2 {
+        Rect2::new(self.pos + other.pos, self.size)
     }
 }
 
@@ -149,5 +153,9 @@ pub struct Rect3 {
 impl Rect3 {
     pub fn new(pos: Pt3, size: Pt2) -> Rect3 {
         Rect3 { pos, size }
+    }
+    /// discard z
+    pub fn project(self) -> Rect2 {
+        Rect2::new(Pt2::new(self.pos.x, self.pos.y), self.size)
     }
 }

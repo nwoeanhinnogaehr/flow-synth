@@ -7,8 +7,9 @@ mod component;
 use self::render::*;
 use super::module::*;
 use self::menu::{Menu, MenuManager, MenuUpdate};
-use self::button::Button;
+use self::button::*;
 use self::geom::*;
+use self::component::*;
 
 use glutin::{self, ContextBuilder, EventsLoop, GlContext, WindowBuilder, ElementState, MouseButton};
 use modular_flow as mf;
@@ -335,7 +336,7 @@ impl<T: Module> GuiModuleWrapper<T> {
             target,
             delete_button: Button::new(
                 ctx,
-                "Xc".into(),
+                "X".into(),
                 Rect2 {
                     pos: Pt2::new(size.x - TITLE_BAR_HEIGHT - BORDER_SIZE, BORDER_SIZE),
                     size: Pt2::fill(TITLE_BAR_HEIGHT),
@@ -386,6 +387,7 @@ where
         if self.dirty {
             self.target.begin_frame();
             self.render_self();
+            self.delete_button.render(device, self.target.ctx(), self.window_rect.upgrade(0.0));
             self.target.end_frame(device);
             self.dirty = false;
         }
@@ -396,6 +398,7 @@ where
         );
     }
     fn update(&mut self, model: &Model) {
+        self.dirty |= ButtonUpdate::NeedRender == self.delete_button.update(model, self.window_rect.upgrade(0.0));
         if let Some(drag) = self.drag {
             self.window_rect.pos = -drag + model.mouse_pos;
         }
