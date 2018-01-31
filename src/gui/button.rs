@@ -1,4 +1,4 @@
-use super::{GuiElement, Model, RenderContext};
+use super::{Model, RenderContext};
 use super::render::*;
 use super::component::*;
 use super::geom::*;

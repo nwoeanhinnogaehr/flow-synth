@@ -1,22 +1,14 @@
 use super::geom::*;
 
-use std::env;
-use std::fs::File;
-use std::io::Read;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::thread;
-use std::time::{Duration, Instant};
-use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use gfx;
 use gfx::texture;
 use gfx::traits::{Factory, FactoryExt};
-use gfx::{CommandBuffer, Device, Encoder, IntoIndexBuffer, PipelineState, Resources, Slice};
+use gfx::{Encoder, IntoIndexBuffer, PipelineState, Slice};
 use gfx::memory::{Bind, Usage};
 use gfx::buffer::Role;
-use gfx::handle::{Buffer, DepthStencilView, RenderTargetView, Sampler, ShaderResourceView, Texture};
-use gfx_window_glutin as gfx_glutin;
+use gfx::handle::{Buffer, DepthStencilView, RenderTargetView, Sampler, ShaderResourceView};
 use gfx_text;
 use gfx_device_gl as gl;
 
@@ -111,7 +103,7 @@ impl RectRenderer {
             gfx::IndexBuffer::Index16(ref ib) => ib.len(),
             gfx::IndexBuffer::Index32(ref ib) => ib.len(),
         };
-        let mut slice = Slice {
+        let slice = Slice {
             start: 0,
             end: buffer_length as u32,
             base_vertex: 0,
@@ -220,7 +212,7 @@ struct TextRenderer {
     texts: Vec<(String, [f32; 2], [f32; 3])>,
 }
 impl TextRenderer {
-    fn new(mut factory: gl::Factory) -> TextRenderer {
+    fn new(factory: gl::Factory) -> TextRenderer {
         let renderer = Arc::new(Mutex::new(gfx_text::new(factory.clone()).unwrap()));
         TextRenderer {
             renderer,
@@ -239,7 +231,7 @@ impl TextRenderer {
                 [color[0], color[1], color[2], 1.0],
             );
         }
-        renderer.draw(encoder, &target.color);
+        renderer.draw(encoder, &target.color).unwrap();
     }
 }
 
@@ -309,8 +301,8 @@ impl Clone for RenderContext {
 
 pub struct TextureTarget {
     ctx: RenderContext,
-    target_texture: Texture<gl::Resources, gfx::format::R8_G8_B8_A8>,
-    depth_texture: Texture<gl::Resources, gfx::format::D24_S8>,
+    //target_texture: Texture<gl::Resources, gfx::format::R8_G8_B8_A8>,
+    //depth_texture: Texture<gl::Resources, gfx::format::D24_S8>,
     target_resource: ShaderResourceView<gl::Resources, [f32; 4]>,
     target: Target,
     size: Pt2,
@@ -366,8 +358,6 @@ impl TextureTarget {
         TextureTarget {
             ctx,
             target_resource,
-            target_texture,
-            depth_texture,
             target,
             size,
         }
@@ -392,24 +382,7 @@ impl TextureTarget {
     }
 }
 
-fn pixels_to_coords(size: [f32; 2], pix: [f32; 2]) -> [f32; 2] {
-    let aspect = size[0] / size[1];
-    [
-        aspect * (pix[0] / size[0] * 2.0 - 1.0),
-        pix[1] / size[1] * -2.0 + 1.0,
-    ]
-}
-fn coords_to_pixels(size: [f32; 2], coord: [f32; 2]) -> [f32; 2] {
-    let aspect = size[0] / size[1];
-    [
-        (coord[0] / aspect * 0.5 + 0.5) * size[0],
-        (-coord[1] * 0.5 + 0.5) * size[1],
-    ]
-}
 fn target_dimensions(target: &Target) -> [f32; 2] {
     let dims = target.color.get_dimensions();
     [dims.0 as f32, dims.1 as f32]
-}
-fn aspect_ratio(size: [f32; 2]) -> f32 {
-    size[0] / size[1]
 }

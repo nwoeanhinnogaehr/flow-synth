@@ -208,7 +208,7 @@ impl MenuView {
             }
         }
     }
-    fn intersect(&self, mut offset: Pt2) -> Vec<&str> {
+    fn intersect(&self, offset: Pt2) -> Vec<&str> {
         let mut path = Vec::new();
         self.intersect_impl(&self.menu, offset, &mut path);
         path
@@ -281,7 +281,7 @@ impl MenuManager {
     }
     pub fn abort(&mut self) {
         if let Some(menu) = self.menu.take() {
-            menu.chan.send(MenuUpdate::Abort);
+            menu.chan.send(MenuUpdate::Abort).unwrap();
         }
     }
 }
@@ -310,7 +310,7 @@ impl GuiElement for MenuManager {
             if let Some(menu) = self.menu.take() {
                 let path = menu.intersect(model.mouse_pos);
                 menu.chan
-                    .send(MenuUpdate::Select(path.iter().map(|&x| x.into()).collect()));
+                    .send(MenuUpdate::Select(path.iter().map(|&x| x.into()).collect())).unwrap();
             }
         }
     }

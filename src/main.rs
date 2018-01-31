@@ -11,7 +11,8 @@
 #![feature(use_nested_groups)]
 #![feature(libc)]
 #![feature(drain_filter)]
-#![allow(unused)]
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
 #[macro_use]
 extern crate gfx;
@@ -20,27 +21,10 @@ extern crate gfx_text;
 extern crate gfx_window_glutin;
 extern crate glutin;
 extern crate libc;
-//extern crate libloading;
 extern crate modular_flow;
-//extern crate rocket;
-//#[macro_use]
-//extern crate rocket_contrib;
-//extern crate rocket_cors;
-//extern crate serde;
-//#[macro_use]
-//extern crate serde_derive;
-//extern crate serde_json;
-//extern crate ws;
 
-//mod web_api;
-//mod control;
-//mod serialize;
-//mod plugin_loader;
 mod module;
 mod gui;
-
-use std::env;
-use std::thread;
 
 fn main() {
     gui::gui_main();

@@ -6,42 +6,28 @@ mod component;
 
 use self::render::*;
 use super::module::*;
-use self::menu::{Menu, MenuManager, MenuUpdate, MenuView};
+use self::menu::{Menu, MenuManager, MenuUpdate};
 use self::button::Button;
 use self::geom::*;
 
-use glutin::{self, Api, ContextBuilder, ControlFlow, EventsLoop, GlContext, GlRequest, Window,
-             WindowBuilder, WindowEvent};
+use glutin::{self, ContextBuilder, EventsLoop, GlContext, WindowBuilder, ElementState, MouseButton};
 use modular_flow as mf;
 
-use std::env;
-use std::fs::File;
-use std::io::Read;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::sync::mpsc::Receiver;
+use std::time::Instant;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use gfx;
-use gfx::texture;
-use gfx::traits::{Factory, FactoryExt};
-use gfx::{CommandBuffer, Device, Encoder, IntoIndexBuffer, PipelineState, Resources, Slice};
-use gfx::memory::{Bind, Usage};
-use gfx::buffer::Role;
-use gfx::handle::{Buffer, DepthStencilView, RenderTargetView, Sampler, ShaderResourceView, Texture};
+use gfx::Device;
 use gfx_window_glutin as gfx_glutin;
-use gfx_text;
 use gfx_device_gl as gl;
 
 type OwnedModule = Mutex<Box<GuiElement>>;
 type Graph = mf::Graph<OwnedModule>;
-type Interface = mf::Interface<OwnedModule>;
 
 /// Model holds info about GUI state
 /// and program state
 pub struct Model {
-    ctx: RenderContext,
     time: f32,
     graph: Arc<Graph>,
     window_size: Pt2,
@@ -55,7 +41,6 @@ pub struct Model {
 impl Model {
     fn new(ctx: RenderContext) -> Model {
         Model {
-            ctx: ctx.clone(),
             graph: Graph::new(),
             time: 0.0,
             window_size: Pt2::fill(0.0),
@@ -110,8 +95,6 @@ impl Model {
     }
 
     fn handle_mouse_input(&mut self, state: &glutin::ElementState, button: &glutin::MouseButton) {
-        use glutin::*;
-
         // intersect menu
         {
             let mut menu = self.menu.lock().unwrap();
@@ -172,7 +155,6 @@ impl Model {
 
     fn handle(&mut self, event: &glutin::Event) {
         use glutin::WindowEvent::*;
-        use glutin::*;
         //println!("{:?}", event);
         match event {
             glutin::Event::WindowEvent {
@@ -224,7 +206,7 @@ pub fn gui_main() {
     let mut events_loop = EventsLoop::new();
     let context = ContextBuilder::new().with_gl_profile(glutin::GlProfile::Core);
     let builder = WindowBuilder::new().with_title(String::from("flow-synth"));
-    let (window, mut device, mut factory, mut main_color, mut main_depth) =
+    let (window, mut device, factory, main_color, main_depth) =
         gfx_glutin::init::<ColorFormat, DepthFormat>(builder, context, &events_loop);
 
     let mut target = Target {
