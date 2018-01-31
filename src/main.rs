@@ -43,17 +43,5 @@ use std::env;
 use std::thread;
 
 fn main() {
-    /*let inst = env::args()
-        .nth(1)
-        .map(|name| serialize::from_file(&name))
-        .unwrap_or(control::Instance::new());
-    let id = env::args()
-        .nth(2)
-        .map(|id| id.parse().unwrap())
-        .unwrap_or(0);*/
     gui::gui_main();
-    //thread::spawn(move || {
-    //web_api::run_server(inst, id);
-    //});
-    //thread::park();
 }

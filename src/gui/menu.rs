@@ -1,5 +1,6 @@
-use super::{GuiElement, Model, Rect, RenderContext};
+use super::{GuiElement, Model, RenderContext};
 use super::render::*;
+use super::geom::*;
 
 use std::sync::mpsc::{channel, Receiver, Sender};
 
@@ -52,14 +53,11 @@ pub fn sub_menu(label: &str, items: &[MenuItem]) -> MenuItem {
     MenuItem::new(label.into(), Some(Menu::new(items)))
 }
 
-fn with_item_pos<T>(iter: impl Iterator<Item = T>, offset: [f32; 2]) -> impl Iterator<Item = (T, [f32; 2])> {
+fn with_item_pos<T>(iter: impl Iterator<Item = T>, offset: Pt2) -> impl Iterator<Item = (T, Pt2)> {
     iter.enumerate().map(move |(idx, item)| {
         (
             item,
-            [
-                offset[0],
-                offset[1] + idx as f32 * (ITEM_HEIGHT - BORDER_SIZE),
-            ],
+            offset + Pt2::new(0.0, idx as f32 * (ITEM_HEIGHT - BORDER_SIZE)),
         )
     })
 }
@@ -126,18 +124,18 @@ fn test_menu() {
 
 pub struct MenuView {
     menu: Menu,
-    pos: [f32; 2],
+    pos: Pt2,
     target: TextureTarget,
     dirty: bool,
     chan: Sender<MenuUpdate>,
 }
 
 impl MenuView {
-    pub fn new(ctx: RenderContext, pos: [f32; 2], menu: Menu, chan: Sender<MenuUpdate>) -> MenuView {
-        let size = [
+    pub fn new(ctx: RenderContext, pos: Pt2, menu: Menu, chan: Sender<MenuUpdate>) -> MenuView {
+        let size = Pt2::new(
             ITEM_WIDTH * menu.width() as f32,
             ITEM_HEIGHT * menu.length() as f32,
-        ];
+        );
         MenuView {
             menu,
             pos,
@@ -146,22 +144,23 @@ impl MenuView {
             chan,
         }
     }
-    fn render_menu(ctx: &mut RenderContext, menu: &mut Menu, offset: [f32; 2]) {
+    fn render_menu(ctx: &mut RenderContext, menu: &mut Menu, offset: Pt2) {
         for (item, pos) in with_item_pos(menu.items.iter_mut(), offset) {
             // borders
-            ctx.draw_rect(ColoredRect {
-                translate: [pos[0], pos[1], 0.0],
-                scale: [ITEM_WIDTH, ITEM_HEIGHT],
-                color: [1.0, 1.0, 1.0],
-            });
+            ctx.draw_rect(
+                Rect2::new(pos, Pt2::new(ITEM_WIDTH, ITEM_HEIGHT)).upgrade(0.0),
+                [1.0, 1.0, 1.0],
+            );
             // background
-            ctx.draw_rect(ColoredRect {
-                translate: [pos[0] + BORDER_SIZE, pos[1] + BORDER_SIZE, 0.0],
-                scale: [
-                    ITEM_WIDTH - BORDER_SIZE * 2.0,
-                    ITEM_HEIGHT - BORDER_SIZE * 2.0,
-                ],
-                color: if item.hover {
+            ctx.draw_rect(
+                Rect2::new(
+                    pos + BORDER_SIZE,
+                    Pt2::new(
+                        ITEM_WIDTH - BORDER_SIZE * 2.0,
+                        ITEM_HEIGHT - BORDER_SIZE * 2.0,
+                    ),
+                ).upgrade(0.0),
+                if item.hover {
                     [0.0; 3]
                 } else {
                     if item.sub_menu().map(|menu| menu.open).unwrap_or(false) {
@@ -170,12 +169,12 @@ impl MenuView {
                         [0.1; 3]
                     }
                 },
-            });
-            ctx.draw_text(&item.label(), [pos[0] + 4.0, pos[1] + 4.0], [1.0; 3]);
+            );
+            ctx.draw_text(&item.label(), pos + 4.0, [1.0; 3]);
 
             if let Some(ref mut menu) = item.sub_menu_mut() {
                 if menu.open {
-                    Self::render_menu(ctx, menu, [pos[0] + ITEM_WIDTH - BORDER_SIZE, pos[1]]);
+                    Self::render_menu(ctx, menu, pos + Pt2::new(ITEM_WIDTH - BORDER_SIZE, 0.0));
                 }
             }
         }
@@ -183,23 +182,24 @@ impl MenuView {
     fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, depth: f32) {
         if self.dirty {
             self.target.begin_frame();
-            Self::render_menu(&mut self.target.ctx(), &mut self.menu, [0.0; 2]);
+            Self::render_menu(&mut self.target.ctx(), &mut self.menu, Pt2::zero());
             self.target.end_frame(device);
             self.dirty = false;
         }
 
-        let window_rect = Rect3D {
-            translate: [self.pos[0], self.pos[1], depth],
-            scale: self.target.size(),
-        };
+        let window_rect = Rect2::new(self.pos, self.target.size()).upgrade(depth);
         ctx.draw_textured_rect(window_rect, self.target.shader_resource().clone());
     }
-    fn intersect_impl<'a>(&self, menu: &'a Menu, offset: [f32; 2], path: &mut Vec<&'a str>) {
+    fn intersect_impl<'a>(&self, menu: &'a Menu, offset: Pt2, path: &mut Vec<&'a str>) {
         for (item, pos) in with_item_pos(menu.items.iter(), offset) {
             if let Some(sub_menu) = item.sub_menu() {
                 if sub_menu.open && sub_menu.any_children_hovered() || item.hover {
                     path.push(item.label());
-                    self.intersect_impl(sub_menu, [pos[0] + ITEM_WIDTH - BORDER_SIZE, pos[1]], path);
+                    self.intersect_impl(
+                        sub_menu,
+                        pos + Pt2::new(ITEM_WIDTH - BORDER_SIZE, 0.0),
+                        path,
+                    );
                 }
             } else {
                 if item.hover {
@@ -208,20 +208,17 @@ impl MenuView {
             }
         }
     }
-    fn intersect(&self, mut offset: [f32; 2]) -> Vec<&str> {
+    fn intersect(&self, mut offset: Pt2) -> Vec<&str> {
         let mut path = Vec::new();
         self.intersect_impl(&self.menu, offset, &mut path);
         path
     }
-    fn update_menu(model: &Model, menu: &mut Menu, offset: [f32; 2]) {
+    fn update_menu(model: &Model, menu: &mut Menu, offset: Pt2) {
         for (item, pos) in with_item_pos(menu.items.iter_mut(), offset) {
-            item.hover = point_in_rect(
-                model.mouse_pos,
-                Rect {
-                    translate: [pos[0], pos[1]],
-                    scale: [ITEM_WIDTH - BORDER_SIZE, ITEM_HEIGHT - BORDER_SIZE],
-                },
-            );
+            item.hover = Rect2::new(
+                pos,
+                Pt2::new(ITEM_WIDTH - BORDER_SIZE, ITEM_HEIGHT - BORDER_SIZE),
+            ).intersect(model.mouse_pos);
             // Update last time mouse touched this item or submenu of it
             if (item.hover
                 || item.sub_menu()
@@ -247,7 +244,7 @@ impl MenuView {
             let hover_time = item.hover_time;
             if let Some(menu) = item.sub_menu_mut() {
                 if model.time - hover_time < HOVER_TIMEOUT || menu.any_children_hovered() {
-                    Self::update_menu(model, menu, [pos[0] + ITEM_WIDTH - BORDER_SIZE, pos[1]]);
+                    Self::update_menu(model, menu, pos + Pt2::new(ITEM_WIDTH - BORDER_SIZE, 0.0));
                     menu.open = true;
                 }
             }
@@ -276,7 +273,7 @@ impl MenuManager {
     pub fn new(ctx: RenderContext) -> MenuManager {
         MenuManager { menu: None, ctx }
     }
-    pub fn open(&mut self, menu: Menu, pos: [f32; 2]) -> Receiver<MenuUpdate> {
+    pub fn open(&mut self, menu: Menu, pos: Pt2) -> Receiver<MenuUpdate> {
         self.abort();
         let (tx, rx) = channel();
         self.menu = Some(MenuView::new(self.ctx.clone(), pos, menu, tx));
@@ -290,7 +287,7 @@ impl MenuManager {
 }
 
 impl GuiElement for MenuManager {
-    fn set_pos(&mut self, pos: [f32; 2]) {
+    fn set_pos(&mut self, pos: Pt2) {
         self.menu.as_mut().map(|menu| menu.pos = pos);
     }
     fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, depth: f32) {
@@ -298,7 +295,7 @@ impl GuiElement for MenuManager {
             .as_mut()
             .map(|menu| menu.render(device, ctx, depth));
     }
-    fn intersect(&self, point: [f32; 2]) -> bool {
+    fn intersect(&self, point: Pt2) -> bool {
         self.menu
             .as_ref()
             .map(|menu| !menu.intersect(point).is_empty())

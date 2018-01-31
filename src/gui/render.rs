@@ -1,3 +1,5 @@
+use super::geom::*;
+
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -59,28 +61,6 @@ gfx_defines! {
         },
     }
 }
-
-#[derive(Copy, Clone)]
-pub struct Rect {
-    pub translate: [f32; 2],
-    pub scale: [f32; 2],
-}
-
-impl Rect {
-    pub fn upgrade(self, z: f32) -> Rect3D {
-        Rect3D {
-            translate: [self.translate[0], self.translate[1], z],
-            scale: self.scale,
-        }
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct Rect3D {
-    pub translate: [f32; 3],
-    pub scale: [f32; 2],
-}
-
 pub struct Target {
     pub color: RenderTargetView<gl::Resources, ColorFormat>,
     pub depth: DepthStencilView<gl::Resources, DepthFormat>,
@@ -171,7 +151,7 @@ struct TexturedRectRenderer {
     factory: gl::Factory,
     pso: PipelineState<gl::Resources, textured_rect_pipe::Meta>,
     sampler: Sampler<gl::Resources>,
-    rects: Vec<(Rect3D, ShaderResourceView<gl::Resources, [f32; 4]>)>,
+    rects: Vec<(Rect3, ShaderResourceView<gl::Resources, [f32; 4]>)>,
 }
 
 impl TexturedRectRenderer {
@@ -197,38 +177,26 @@ impl TexturedRectRenderer {
             rects: Vec::new(),
         }
     }
-    fn push(&mut self, rect: Rect3D, texture: ShaderResourceView<gl::Resources, [f32; 4]>) {
+    fn push(&mut self, rect: Rect3, texture: ShaderResourceView<gl::Resources, [f32; 4]>) {
         self.rects.push((rect, texture));
     }
     fn draw(&mut self, encoder: &mut Encoder<gl::Resources, gl::CommandBuffer>, target: &Target) {
         for (rect, texture) in self.rects.drain(..) {
             let vertices = [
                 TexturedVertex {
-                    translate: [rect.translate[0], rect.translate[1], rect.translate[2]],
+                    translate: rect.pos.into(),
                     tex_coord: [0.0, 1.0],
                 },
                 TexturedVertex {
-                    translate: [
-                        rect.translate[0],
-                        rect.translate[1] + rect.scale[1],
-                        rect.translate[2],
-                    ],
+                    translate: (rect.pos + Pt3::new(0.0, rect.size.y, 0.0)).into(),
                     tex_coord: [0.0, 0.0],
                 },
                 TexturedVertex {
-                    translate: [
-                        rect.translate[0] + rect.scale[0],
-                        rect.translate[1] + rect.scale[1],
-                        rect.translate[2],
-                    ],
+                    translate: (rect.pos + Pt3::new(rect.size.x, rect.size.y, 0.0)).into(),
                     tex_coord: [1.0, 0.0],
                 },
                 TexturedVertex {
-                    translate: [
-                        rect.translate[0] + rect.scale[0],
-                        rect.translate[1],
-                        rect.translate[2],
-                    ],
+                    translate: (rect.pos + Pt3::new(rect.size.x, 0.0, 0.0)).into(),
                     tex_coord: [1.0, 1.0],
                 },
             ];
@@ -301,13 +269,17 @@ impl RenderContext {
         self.encoder.clear(&target.color, [0.0; 4]);
         self.encoder.clear_depth(&target.depth, 1.0);
     }
-    pub fn draw_text(&mut self, text: &str, pos: [f32; 2], color: [f32; 3]) {
-        self.texts.push(text, pos, color);
+    pub fn draw_text(&mut self, text: &str, pos: Pt2, color: [f32; 3]) {
+        self.texts.push(text, pos.into(), color);
     }
-    pub fn draw_rect(&mut self, rect: ColoredRect) {
-        self.rects.push(rect);
+    pub fn draw_rect(&mut self, rect: Rect3, color: [f32; 3]) {
+        self.rects.push(ColoredRect {
+            translate: rect.pos.into(),
+            scale: rect.size.into(),
+            color,
+        });
     }
-    pub fn draw_textured_rect(&mut self, rect: Rect3D, texture: ShaderResourceView<gl::Resources, [f32; 4]>) {
+    pub fn draw_textured_rect(&mut self, rect: Rect3, texture: ShaderResourceView<gl::Resources, [f32; 4]>) {
         self.textured_rects.push(rect, texture);
     }
     pub fn factory(&self) -> &gl::Factory {
@@ -341,15 +313,15 @@ pub struct TextureTarget {
     depth_texture: Texture<gl::Resources, gfx::format::D24_S8>,
     target_resource: ShaderResourceView<gl::Resources, [f32; 4]>,
     target: Target,
-    size: [f32; 2],
+    size: Pt2,
 }
 
 impl TextureTarget {
-    pub fn new(ctx: RenderContext, size: [f32; 2]) -> TextureTarget {
+    pub fn new(ctx: RenderContext, size: Pt2) -> TextureTarget {
         let mut factory = ctx.factory().clone();
         let target_texture = factory
             .create_texture(
-                texture::Kind::D2(size[0] as u16, size[1] as u16, texture::AaMode::Single),
+                texture::Kind::D2(size.x as u16, size.y as u16, texture::AaMode::Single),
                 1, //levels
                 Bind::RENDER_TARGET | Bind::SHADER_RESOURCE,
                 Usage::Data,
@@ -372,7 +344,7 @@ impl TextureTarget {
             .unwrap();
         let depth_texture = factory
             .create_texture(
-                texture::Kind::D2(size[0] as u16, size[1] as u16, texture::AaMode::Single),
+                texture::Kind::D2(size.x as u16, size.y as u16, texture::AaMode::Single),
                 1, //levels
                 Bind::DEPTH_STENCIL,
                 Usage::Data,
@@ -415,15 +387,11 @@ impl TextureTarget {
     pub fn end_frame(&mut self, device: &mut gl::Device) {
         self.ctx.end_frame(device, &self.target);
     }
-    pub fn size(&self) -> [f32; 2] {
+    pub fn size(&self) -> Pt2 {
         self.size
     }
 }
 
-pub fn point_in_rect(pos: [f32; 2], rect: Rect) -> bool {
-    pos[0] > rect.translate[0] && pos[0] < rect.translate[0] + rect.scale[0] && pos[1] > rect.translate[1]
-        && pos[1] < rect.translate[1] + rect.scale[1]
-}
 fn pixels_to_coords(size: [f32; 2], pix: [f32; 2]) -> [f32; 2] {
     let aspect = size[0] / size[1];
     [

@@ -1,9 +1,14 @@
 mod render;
 mod menu;
+mod button;
+mod geom;
+mod component;
 
 use self::render::*;
 use super::module::*;
 use self::menu::{Menu, MenuManager, MenuUpdate, MenuView};
+use self::button::Button;
+use self::geom::*;
 
 use glutin::{self, Api, ContextBuilder, ControlFlow, EventsLoop, GlContext, GlRequest, Window,
              WindowBuilder, WindowEvent};
@@ -35,12 +40,12 @@ type Interface = mf::Interface<OwnedModule>;
 
 /// Model holds info about GUI state
 /// and program state
-struct Model {
+pub struct Model {
     ctx: RenderContext,
     time: f32,
     graph: Arc<Graph>,
-    window_size: [f32; 2],
-    mouse_pos: [f32; 2],
+    window_size: Pt2,
+    mouse_pos: Pt2,
     node_z: Vec<mf::NodeId>,
     module_types: Vec<mf::MetaModule<OwnedModule>>,
     menu: Mutex<MenuManager>,
@@ -53,8 +58,8 @@ impl Model {
             ctx: ctx.clone(),
             graph: Graph::new(),
             time: 0.0,
-            window_size: [0.0, 0.0],
-            mouse_pos: [0.0, 0.0],
+            window_size: Pt2::fill(0.0),
+            mouse_pos: Pt2::fill(0.0),
             node_z: Vec::new(),
             module_types: load_metamodules(ctx.clone()),
             menu: Mutex::new(MenuManager::new(ctx)),
@@ -147,7 +152,7 @@ impl Model {
         }
     }
 
-    fn new_module(&self, meta: &mf::MetaModule<OwnedModule>, pos: [f32; 2]) {
+    fn new_module(&self, meta: &mf::MetaModule<OwnedModule>, pos: Pt2) {
         let node = self.graph.add_node(meta);
         let mut module = node.module().lock().unwrap();
         module.set_pos(pos);
@@ -175,14 +180,14 @@ impl Model {
                 event,
             } => match event {
                 Resized(w, h) => {
-                    self.window_size = [*w as f32, *h as f32];
+                    self.window_size = Pt2::new(*w as f32, *h as f32);
                 }
                 CursorMoved {
                     device_id: _,
                     position,
                     modifiers: _,
                 } => {
-                    self.mouse_pos = [(position.0 as f32).floor(), (position.1 as f32).floor()];
+                    self.mouse_pos = Pt2::new((position.0 as f32).floor(), (position.1 as f32).floor());
                 }
                 MouseInput {
                     device_id: _,
@@ -305,7 +310,7 @@ pub fn gui_main() {
         // debug text
         ctx.draw_text(
             &format!("FPS={} Time={}", frames.len(), model.time),
-            [0.0, 0.0],
+            Pt2::new(0.0, 0.0),
             [1.0, 1.0, 1.0],
         );
 
@@ -319,9 +324,9 @@ const TITLE_BAR_HEIGHT: f32 = 24.0;
 const BORDER_SIZE: f32 = 1.0;
 
 trait GuiElement {
-    fn set_pos(&mut self, pos: [f32; 2]);
-    fn render(&mut self, &mut gl::Device, &mut RenderContext, f32);
-    fn intersect(&self, point: [f32; 2]) -> bool;
+    fn set_pos(&mut self, pos: Pt2);
+    fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, depth: f32);
+    fn intersect(&self, point: Pt2) -> bool;
     fn update(&mut self, model: &Model);
     fn handle(&mut self, model: &Model, event: &glutin::Event);
     fn handle_click(&mut self, model: &Model, state: &glutin::ElementState, button: &glutin::MouseButton);
@@ -331,23 +336,32 @@ struct GuiModuleWrapper<T: Module> {
 
     target: TextureTarget,
 
-    window_rect: Rect,
-    size: [f32; 2],
-    drag: Option<[f32; 2]>,
+    delete_button: Button,
+    window_rect: Rect2,
+    size: Pt2,
+    drag: Option<Pt2>,
     dirty: bool,
 }
 
 impl<T: Module> GuiModuleWrapper<T> {
     fn new(module: T, ctx: RenderContext) -> GuiModuleWrapper<T> {
-        let size = [256.0; 2];
-        let target = TextureTarget::new(ctx, size);
+        let size = Pt2::fill(256.0);
+        let target = TextureTarget::new(ctx.clone(), size);
 
         GuiModuleWrapper {
             module,
             target,
-            window_rect: Rect {
-                translate: [0.0; 2],
-                scale: size,
+            delete_button: Button::new(
+                ctx,
+                "Xc".into(),
+                Rect2 {
+                    pos: Pt2::new(size.x - TITLE_BAR_HEIGHT - BORDER_SIZE, BORDER_SIZE),
+                    size: Pt2::fill(TITLE_BAR_HEIGHT),
+                },
+            ),
+            window_rect: Rect2 {
+                pos: Pt2::fill(0.0),
+                size,
             },
             size,
             drag: None,
@@ -358,27 +372,24 @@ impl<T: Module> GuiModuleWrapper<T> {
         let title = &self.title();
         let ctx = self.target.ctx();
         // borders
-        ctx.draw_rect(ColoredRect {
-            translate: [0.0, 0.0, 0.0],
-            scale: self.size,
-            color: [1.0, 1.0, 1.0],
-        });
+        ctx.draw_rect(Rect3::new(Pt3::fill(0.0), self.size), [1.0, 1.0, 1.0]);
         // background
-        ctx.draw_rect(ColoredRect {
-            translate: [BORDER_SIZE, BORDER_SIZE + TITLE_BAR_HEIGHT, 0.0],
-            scale: [
-                self.size[0] - BORDER_SIZE * 2.0,
-                self.size[1] - BORDER_SIZE * 2.0 - TITLE_BAR_HEIGHT,
-            ],
-            color: [0.1, 0.1, 0.1],
-        });
+        ctx.draw_rect(
+            Rect3::new(
+                Pt3::new(BORDER_SIZE, BORDER_SIZE + TITLE_BAR_HEIGHT, 0.0),
+                self.size - Pt2::new(BORDER_SIZE * 2.0, BORDER_SIZE * 2.0 + TITLE_BAR_HEIGHT),
+            ),
+            [0.1, 0.1, 0.1],
+        );
         // title bar
-        ctx.draw_rect(ColoredRect {
-            translate: [BORDER_SIZE, BORDER_SIZE, 0.0],
-            scale: [self.size[0] - BORDER_SIZE * 2.0, TITLE_BAR_HEIGHT],
-            color: [0.0, 0.0, 0.0],
-        });
-        ctx.draw_text(title, [4.0, 4.0], [1.0, 1.0, 1.0]);
+        ctx.draw_rect(
+            Rect3::new(
+                Pt3::new(BORDER_SIZE, BORDER_SIZE, 0.0),
+                Pt2::new(self.size.x - BORDER_SIZE * 2.0, TITLE_BAR_HEIGHT),
+            ),
+            [0.0, 0.0, 0.0],
+        );
+        ctx.draw_text(title, Pt2::new(4.0, 4.0), [1.0, 1.0, 1.0]);
     }
 }
 
@@ -386,9 +397,8 @@ impl<T> GuiElement for GuiModuleWrapper<T>
 where
     T: Module,
 {
-    fn set_pos(&mut self, pos: [f32; 2]) {
-        self.window_rect.translate[0] = pos[0];
-        self.window_rect.translate[1] = pos[1];
+    fn set_pos(&mut self, pos: Pt2) {
+        self.window_rect.pos = pos;
     }
     fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, z_idx: f32) {
         if self.dirty {
@@ -405,10 +415,7 @@ where
     }
     fn update(&mut self, model: &Model) {
         if let Some(drag) = self.drag {
-            self.window_rect.translate = [
-                -drag[0] + model.mouse_pos[0],
-                -drag[1] + model.mouse_pos[1],
-            ];
+            self.window_rect.pos = -drag + model.mouse_pos;
         }
     }
     fn handle(&mut self, model: &Model, event: &glutin::Event) {}
@@ -418,12 +425,9 @@ where
             MouseButton::Left => match state {
                 ElementState::Pressed => {
                     let mut title_rect = self.window_rect;
-                    title_rect.scale[1] = TITLE_BAR_HEIGHT + BORDER_SIZE;
-                    if point_in_rect(model.mouse_pos, title_rect) {
-                        self.drag = Some([
-                            model.mouse_pos[0] - self.window_rect.translate[0],
-                            model.mouse_pos[1] - self.window_rect.translate[1],
-                        ]);
+                    title_rect.size = Pt2::new(title_rect.size.x, TITLE_BAR_HEIGHT + BORDER_SIZE);
+                    if title_rect.intersect(model.mouse_pos) {
+                        self.drag = Some(model.mouse_pos - self.window_rect.pos);
                     }
                 }
                 ElementState::Released => {
@@ -433,8 +437,8 @@ where
             _ => {}
         }
     }
-    fn intersect(&self, point: [f32; 2]) -> bool {
-        point_in_rect(point, self.window_rect)
+    fn intersect(&self, point: Pt2) -> bool {
+        self.window_rect.intersect(point)
     }
 }
 impl<T> Module for GuiModuleWrapper<T>
