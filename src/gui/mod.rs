@@ -11,7 +11,7 @@ use self::button::*;
 use self::geom::*;
 use self::component::*;
 
-use glutin::{self, ContextBuilder, EventsLoop, GlContext, WindowBuilder, ElementState, MouseButton};
+use glutin::{self, ContextBuilder, ElementState, EventsLoop, GlContext, MouseButton, WindowBuilder};
 use modular_flow as mf;
 
 use std::sync::mpsc::Receiver;
@@ -387,7 +387,8 @@ where
         if self.dirty {
             self.target.begin_frame();
             self.render_self();
-            self.delete_button.render(device, self.target.ctx(), self.window_rect.upgrade(0.0));
+            self.delete_button
+                .render(device, self.target.ctx(), self.window_rect.upgrade(0.0));
             self.target.end_frame(device);
             self.dirty = false;
         }
@@ -398,7 +399,9 @@ where
         );
     }
     fn update(&mut self, model: &Model) {
-        self.dirty |= ButtonUpdate::NeedRender == self.delete_button.update(model, self.window_rect.upgrade(0.0));
+        self.dirty |= ButtonUpdate::NeedRender
+            == self.delete_button
+                .update(model, self.window_rect.upgrade(0.0));
         if let Some(drag) = self.drag {
             self.window_rect.pos = -drag + model.mouse_pos;
         }

@@ -310,7 +310,8 @@ impl GuiElement for MenuManager {
             if let Some(menu) = self.menu.take() {
                 let path = menu.intersect(model.mouse_pos);
                 menu.chan
-                    .send(MenuUpdate::Select(path.iter().map(|&x| x.into()).collect())).unwrap();
+                    .send(MenuUpdate::Select(path.iter().map(|&x| x.into()).collect()))
+                    .unwrap();
             }
         }
     }

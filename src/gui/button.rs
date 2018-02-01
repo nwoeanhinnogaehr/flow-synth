@@ -40,16 +40,18 @@ impl GuiComponent<ButtonUpdate> for Button {
         ctx.draw_rect(self.rect.upgrade_with(&parent), [1.0; 3]);
         // background
         ctx.draw_rect(
-            Rect2 {
-                pos: self.rect.pos + Pt2::fill(BORDER_SIZE),
-                size: self.rect.size - Pt2::fill(BORDER_SIZE * 2.0),
-            }.upgrade_with(&parent),
+            Rect2::new(
+                self.rect.pos + BORDER_SIZE,
+                self.rect.size - BORDER_SIZE * 2.0,
+            ).upgrade_with(&parent),
             if self.hover { [0.0; 3] } else { [0.1; 3] },
         );
         ctx.draw_text(&self.label, self.rect.pos + Pt2::fill(4.0), [1.0; 3]);
     }
     fn update(&mut self, model: &Model, parent: Rect3) -> ButtonUpdate {
-        let hover = self.rect.offset(parent.project()).intersect(model.mouse_pos);
+        let hover = self.rect
+            .offset(parent.project())
+            .intersect(model.mouse_pos);
         if self.hover != hover {
             self.hover = hover;
             ButtonUpdate::NeedRender
