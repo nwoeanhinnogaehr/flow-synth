@@ -1,5 +1,4 @@
 use super::{Model, RenderContext};
-use super::render::*;
 use super::component::*;
 use super::geom::*;
 
@@ -12,7 +11,6 @@ pub struct Button {
     label: String,
     rect: Rect2,
 
-    target: TextureTarget,
     hover: bool,
 }
 
@@ -21,7 +19,6 @@ impl Button {
         Button {
             label,
             rect,
-            target: TextureTarget::new(ctx, rect.size),
             hover: false,
         }
     }
@@ -50,11 +47,6 @@ impl GuiComponent<ButtonUpdate> for Button {
             if self.hover { [0.0; 3] } else { [0.1; 3] },
         );
         ctx.draw_text(&self.label, self.rect.pos + Pt2::fill(4.0), [1.0; 3]);
-
-        ctx.draw_textured_rect(
-            self.rect.upgrade_with(&parent),
-            self.target.shader_resource().clone(),
-        );
     }
     fn update(&mut self, model: &Model, parent: Rect3) -> ButtonUpdate {
         let hover = self.rect.offset(parent.project()).intersect(model.mouse_pos);
