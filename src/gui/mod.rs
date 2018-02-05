@@ -134,6 +134,7 @@ impl Model {
     }
 
     fn new_module(&self, meta: &mf::MetaModule<OwnedModule>, rect: Rect2) {
+        // dummy z, overwritten by move_to_front
         let bounds = Box3::new(rect.pos.with_z(0.0), rect.size.with_z(0.0));
         let node = self.graph.add_node(meta, bounds);
         self.move_to_front(node.id());
@@ -197,6 +198,20 @@ impl Model {
                 _ => (),
             },
             _ => (),
+        }
+    }
+
+    fn render(&mut self, ctx: &mut RenderContext, device: &mut gl::Device) {
+        // render nodes
+        let graph_nodes = self.graph.node_map();
+        for (id, node) in &graph_nodes {
+            let mut module = node.module().lock().unwrap();
+            module.render(device, ctx);
+        }
+
+        // render global widgets
+        if let Some(menu) = self.context_menu.as_mut() {
+            menu.render(device, ctx);
         }
     }
 }
@@ -274,17 +289,7 @@ pub fn gui_main() {
 
         ctx.begin_frame(&target);
 
-        // render nodes
-        let graph_nodes = model.graph.node_map();
-        for (id, node) in &graph_nodes {
-            let mut module = node.module().lock().unwrap();
-            module.render(&mut device, &mut ctx);
-        }
-
-        // render global widgets
-        if let Some(menu) = model.context_menu.as_mut() {
-            menu.render(&mut device, &mut ctx);
-        }
+        model.render(&mut ctx, &mut device);
 
         // debug text
         ctx.draw_text(
