@@ -1,24 +1,24 @@
-use super::{Model, RenderContext};
+use super::RenderContext;
 use super::component::*;
 use super::geom::*;
+use super::event::*;
 
 use gfx_device_gl as gl;
-use glutin;
 
 const BORDER_SIZE: f32 = 1.0;
 
 pub struct Button {
     label: String,
-    rect: Rect2,
+    bounds: Box3,
 
     hover: bool,
 }
 
 impl Button {
-    pub fn new(ctx: RenderContext, label: String, rect: Rect2) -> Button {
+    pub fn new(ctx: RenderContext, label: String, bounds: Box3) -> Button {
         Button {
             label,
-            rect,
+            bounds,
             hover: false,
         }
     }
@@ -32,34 +32,49 @@ pub enum ButtonUpdate {
 }
 
 impl GuiComponent<ButtonUpdate> for Button {
-    fn rect(&self) -> Rect2 {
-        self.rect
+    fn bounds(&self) -> Box3 {
+        self.bounds
     }
-    fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, parent: Rect3) {
+    fn set_bounds(&mut self, bounds: Box3) {
+        self.bounds = bounds;
+    }
+    fn intersect(&self, pos: Pt2) -> bool {
+        self.bounds.flatten().drop_z().intersect(pos)
+    }
+    fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext) {
         // border
-        ctx.draw_rect(self.rect.upgrade_with(&parent), [1.0; 3]);
+        ctx.draw_rect(self.bounds.flatten(), [1.0; 3]);
         // background
         ctx.draw_rect(
-            Rect2::new(
-                self.rect.pos + BORDER_SIZE,
-                self.rect.size - BORDER_SIZE * 2.0,
-            ).upgrade_with(&parent),
+            Rect3::new(
+                self.bounds.pos + Pt3::new(BORDER_SIZE, BORDER_SIZE, 0.0),
+                self.bounds.flatten().size - BORDER_SIZE * 2.0,
+            ),
             if self.hover { [0.0; 3] } else { [0.1; 3] },
         );
-        ctx.draw_text(&self.label, self.rect.pos + Pt2::fill(4.0), [1.0; 3]);
+        ctx.draw_text(
+            &self.label,
+            self.bounds.pos + Pt3::new(4.0, 4.0, 0.0),
+            [1.0; 3],
+        );
     }
-    fn update(&mut self, model: &Model, parent: Rect3) -> ButtonUpdate {
-        let hover = self.rect
-            .offset(parent.project())
-            .intersect(model.mouse_pos);
-        if self.hover != hover {
-            self.hover = hover;
-            ButtonUpdate::NeedRender
-        } else {
-            ButtonUpdate::Unchanged
+    fn handle(&mut self, event: &Event) -> ButtonUpdate {
+        match event.data {
+            EventData::MouseMove(pos) => {
+                let hover = self.bounds.flatten().drop_z().intersect(pos);
+                if self.hover != hover {
+                    self.hover = hover;
+                    ButtonUpdate::NeedRender
+                } else {
+                    ButtonUpdate::Unchanged
+                }
+            }
+            EventData::Click(pos, button, state)
+                if button == MouseButton::Left && state == ButtonState::Released && self.hover =>
+            {
+                ButtonUpdate::Clicked
+            }
+            _ => ButtonUpdate::Unchanged,
         }
-    }
-    fn handle(&mut self, model: &Model, parent: Rect3, event: &glutin::Event) -> ButtonUpdate {
-        ButtonUpdate::Unchanged
     }
 }

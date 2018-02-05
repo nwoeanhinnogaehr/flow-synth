@@ -11,6 +11,7 @@
 #![feature(use_nested_groups)]
 #![feature(libc)]
 #![feature(drain_filter)]
+#![feature(nll)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 

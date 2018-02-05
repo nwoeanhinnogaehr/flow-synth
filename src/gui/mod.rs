@@ -3,40 +3,42 @@ mod menu;
 mod button;
 mod geom;
 mod component;
+mod event;
 
 use self::render::*;
 use super::module::*;
-use self::menu::{Menu, MenuManager, MenuUpdate};
+use self::menu::{Menu, MenuUpdate, MenuView};
 use self::button::*;
 use self::geom::*;
 use self::component::*;
+use self::event::*;
 
-use glutin::{self, ContextBuilder, ElementState, EventsLoop, GlContext, MouseButton, WindowBuilder};
+use glutin::{self, ContextBuilder, EventsLoop, GlContext, WindowBuilder};
 use modular_flow as mf;
 
-use std::sync::mpsc::Receiver;
 use std::time::Instant;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+use std::cmp::Ordering;
 
 use gfx::Device;
 use gfx_window_glutin as gfx_glutin;
 use gfx_device_gl as gl;
 
-type OwnedModule = Mutex<Box<GuiElement>>;
+type OwnedModule = Mutex<Box<GuiComponent<GuiModuleUpdate>>>;
 type Graph = mf::Graph<OwnedModule>;
+type Node = mf::Node<OwnedModule>;
 
 /// Model holds info about GUI state
 /// and program state
 pub struct Model {
+    ctx: RenderContext,
     time: f32,
     graph: Arc<Graph>,
     window_size: Pt2,
     mouse_pos: Pt2,
-    node_z: Vec<mf::NodeId>,
     module_types: Vec<mf::MetaModule<OwnedModule>>,
-    menu: Mutex<MenuManager>,
-    menu_chan: Option<Receiver<MenuUpdate>>,
+    context_menu: Option<MenuView>,
 }
 
 impl Model {
@@ -46,112 +48,123 @@ impl Model {
             time: 0.0,
             window_size: Pt2::fill(0.0),
             mouse_pos: Pt2::fill(0.0),
-            node_z: Vec::new(),
             module_types: load_metamodules(ctx.clone()),
-            menu: Mutex::new(MenuManager::new(ctx)),
-            menu_chan: None,
+            context_menu: None,
+            ctx,
         }
     }
 
-    fn update_depth(&mut self) {
-        use std::collections::HashSet;
-        let graph_nodes = self.graph.node_map();
-        let mut seen = HashSet::new();
-        self.node_z.drain_filter(|node| {
-            seen.insert(*node);
-            !graph_nodes.contains_key(node)
-        });
-        for (id, _) in &graph_nodes {
-            if !seen.contains(id) {
-                self.node_z.push(*id);
-            }
-        }
-    }
-
-    fn handle_menu_updates(&mut self) {
-        if self.menu_chan.is_some() {
-            let chan = self.menu_chan.take().unwrap();
-            match chan.try_recv() {
-                Ok(MenuUpdate::Select(path)) => {
-                    let name = path[0].as_ref();
-                    let module = self.module_types.iter().find(|ty| ty.name == name).unwrap();
-                    self.new_module(module, self.mouse_pos);
-                }
-                Ok(MenuUpdate::Abort) => {}
-                _ => {
-                    self.menu_chan = Some(chan);
-                }
-            }
-        }
-    }
-
-    fn update(&mut self) {
-        self.update_depth();
-        for node in self.graph.nodes() {
-            let mut module = node.module().lock().unwrap();
-            module.update(self);
-        }
-        self.menu.lock().unwrap().update(self);
-        self.handle_menu_updates();
-    }
-
-    fn handle_mouse_input(&mut self, state: &glutin::ElementState, button: &glutin::MouseButton) {
+    fn handle_mouse_input(&mut self, state: ButtonState, button: MouseButton) {
+        let event = Event {
+            time: self.time,
+            data: EventData::Click(self.mouse_pos, button.into(), state.into()),
+        };
         // intersect menu
-        {
-            let mut menu = self.menu.lock().unwrap();
+        if let Some(menu) = self.context_menu.as_mut() {
             if menu.intersect(self.mouse_pos) {
-                menu.handle_click(self, state, button);
+                let status = menu.handle(&event);
+                match status {
+                    MenuUpdate::Select(path) => {
+                        let name = path[0].as_ref();
+                        let module = self.module_types.iter().find(|ty| ty.name == name).unwrap();
+                        self.new_module(module, Rect2::new(self.mouse_pos, Pt2::fill(256.0)));
+                        self.context_menu = None;
+                    }
+                    _ => (),
+                }
                 return;
             }
         }
 
-        let graph_nodes = self.graph.node_map();
-        let mut hit = false;
-        let mut idx = self.node_z.len();
-        for id in self.node_z.iter().rev() {
-            idx -= 1;
-            if let Some(node) = graph_nodes.get(id) {
-                let mut module = node.module().lock().unwrap();
-                if module.intersect(self.mouse_pos) {
-                    module.handle_click(self, state, button);
-                    hit = true;
-                    break;
+        // intersect nodes
+        let mut nodes = self.graph.nodes();
+        nodes.sort_by(Self::compare_node_z);
+        for node in &nodes {
+            let mut module = node.module().lock().unwrap();
+            if module.intersect(self.mouse_pos) {
+                let status = module.handle(&event);
+                drop(module);
+                match status {
+                    GuiModuleUpdate::Closed => {
+                        self.graph.remove_node(node.id()).unwrap();
+                    }
+                    _ => {}
                 }
-            }
-        }
-        if hit {
-            if ElementState::Pressed == *state {
-                let removed = self.node_z.remove(idx);
-                self.node_z.push(removed);
+                self.move_to_front(node.id());
+                break;
             }
         }
 
         // right click - open menu
-        if ElementState::Pressed == *state && MouseButton::Right == *button {
+        if ButtonState::Pressed == state && MouseButton::Right == button {
             self.open_new_module_menu();
         }
         // left click - abort menu
-        if ElementState::Pressed == *state && MouseButton::Left == *button {
-            self.menu.lock().unwrap().abort();
+        if ButtonState::Pressed == state && MouseButton::Left == button {
+            self.context_menu = None;
         }
     }
 
-    fn new_module(&self, meta: &mf::MetaModule<OwnedModule>, pos: Pt2) {
-        let node = self.graph.add_node(meta);
-        let mut module = node.module().lock().unwrap();
-        module.set_pos(pos);
+    fn compare_node_z(a: &Arc<Node>, b: &Arc<Node>) -> Ordering {
+        let a_z = a.module().lock().unwrap().bounds().pos.z;
+        let b_z = b.module().lock().unwrap().bounds().pos.z;
+        a_z.partial_cmp(&b_z).unwrap()
+    }
+
+    fn move_to_front(&self, id: mf::NodeId) {
+        let mut nodes = self.graph.nodes();
+        nodes.sort_by(|a, b| {
+            // force given id to front
+            if a.id() == id {
+                Ordering::Less
+            } else if b.id() == id {
+                Ordering::Greater
+            } else {
+                Self::compare_node_z(a, b)
+            }
+        });
+        let max = nodes.len() as f32;
+        for (idx, node) in nodes.iter().enumerate() {
+            let mut module = node.module().lock().unwrap();
+            let mut bounds = module.bounds();
+            bounds.pos.z = idx as f32 / max;
+            bounds.size.z = 1.0 / max;
+            module.set_bounds(bounds);
+        }
+    }
+
+    fn new_module(&self, meta: &mf::MetaModule<OwnedModule>, rect: Rect2) {
+        let bounds = Box3::new(rect.pos.with_z(0.0), rect.size.with_z(0.0));
+        let node = self.graph.add_node(meta, bounds);
+        self.move_to_front(node.id());
     }
 
     fn open_new_module_menu(&mut self) {
-        self.menu_chan = Some(
-            self.menu.lock().unwrap().open(
-                Menu::new(&self.module_types
-                    .iter()
-                    .map(|ty| menu::item(&ty.name))
-                    .collect::<Vec<_>>()),
-                self.mouse_pos,
+        self.context_menu = Some(MenuView::new(
+            self.ctx.clone(),
+            Box3::new(
+                self.mouse_pos.with_z(0.0),
+                (self.window_size - self.mouse_pos).with_z(0.0),
             ),
-        );
+            Menu::new(&self.module_types
+                .iter()
+                .map(|ty| menu::item(&ty.name))
+                .collect::<Vec<_>>()),
+        ));
+    }
+
+    fn generate_event(&mut self, data: EventData) {
+        let event = Event {
+            time: self.time,
+            data,
+        };
+        for node in self.graph.nodes() {
+            let mut module = node.module().lock().unwrap();
+            module.handle(&event);
+        }
+        if let Some(menu) = self.context_menu.as_mut() {
+            menu.handle(&event);
+        }
     }
 
     fn handle(&mut self, event: &glutin::Event) {
@@ -171,6 +184,7 @@ impl Model {
                     modifiers: _,
                 } => {
                     self.mouse_pos = Pt2::new((position.0 as f32).floor(), (position.1 as f32).floor());
+                    self.generate_event(EventData::MouseMove(self.mouse_pos));
                 }
                 MouseInput {
                     device_id: _,
@@ -178,7 +192,7 @@ impl Model {
                     button,
                     modifiers: _,
                 } => {
-                    self.handle_mouse_input(&state, &button);
+                    self.handle_mouse_input(state.into(), button.into());
                 }
                 _ => (),
             },
@@ -192,10 +206,12 @@ fn load_metamodules(ctx: RenderContext) -> Vec<mf::MetaModule<OwnedModule>> {
     let mod_ctx = ctx;
     let test_module = mf::MetaModule::new(
         "TestModule",
-        Arc::new(move |ifc| {
-            Mutex::new(
-                Box::new(GuiModuleWrapper::new(TestModule::new(ifc), mod_ctx.clone())) as Box<GuiElement>,
-            )
+        Arc::new(move |ifc, bounds| {
+            Mutex::new(Box::new(GuiModuleWrapper::new(
+                TestModule::new(ifc),
+                mod_ctx.clone(),
+                bounds,
+            )) as Box<GuiComponent<GuiModuleUpdate>>)
         }),
     );
     modules.push(test_module);
@@ -240,10 +256,6 @@ pub fn gui_main() {
         // handle events
         events_loop.poll_events(|event| {
             model.handle(&event);
-            for node in model.graph.nodes() {
-                let mut module = node.module().lock().unwrap();
-                module.handle(&model, &event);
-            }
             use glutin::WindowEvent::*;
             match event {
                 glutin::Event::WindowEvent {
@@ -260,40 +272,24 @@ pub fn gui_main() {
             }
         });
 
-        // update model
-        model.update();
-
         ctx.begin_frame(&target);
 
         // render nodes
-        let mut z_idx = 0;
         let graph_nodes = model.graph.node_map();
-        for id in &model.node_z {
-            match graph_nodes.get(id) {
-                Some(node) => {
-                    let mut module = node.module().lock().unwrap();
-                    module.render(
-                        &mut device,
-                        &mut ctx,
-                        1.0 - z_idx as f32 / graph_nodes.len() as f32,
-                    );
-                    z_idx += 1;
-                }
-                None => (), // node was removed between call to model.update() and here. safe to ignore
-            }
+        for (id, node) in &graph_nodes {
+            let mut module = node.module().lock().unwrap();
+            module.render(&mut device, &mut ctx);
         }
 
         // render global widgets
-        model
-            .menu
-            .lock()
-            .unwrap()
-            .render(&mut device, &mut ctx, 0.0);
+        if let Some(menu) = model.context_menu.as_mut() {
+            menu.render(&mut device, &mut ctx);
+        }
 
         // debug text
         ctx.draw_text(
             &format!("FPS={} Time={}", frames.len(), model.time),
-            Pt2::new(0.0, 0.0),
+            Pt3::new(0.0, 0.0, 0.0),
             [1.0, 1.0, 1.0],
         );
 
@@ -306,30 +302,20 @@ pub fn gui_main() {
 const TITLE_BAR_HEIGHT: f32 = 24.0;
 const BORDER_SIZE: f32 = 1.0;
 
-trait GuiElement {
-    fn set_pos(&mut self, pos: Pt2);
-    fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, depth: f32);
-    fn intersect(&self, point: Pt2) -> bool;
-    fn update(&mut self, model: &Model);
-    fn handle(&mut self, model: &Model, event: &glutin::Event);
-    fn handle_click(&mut self, model: &Model, state: &glutin::ElementState, button: &glutin::MouseButton);
-}
 struct GuiModuleWrapper<T: Module> {
     module: T,
 
     target: TextureTarget,
 
     delete_button: Button,
-    window_rect: Rect2,
-    size: Pt2,
+    bounds: Box3,
     drag: Option<Pt2>,
     dirty: bool,
 }
 
 impl<T: Module> GuiModuleWrapper<T> {
-    fn new(module: T, ctx: RenderContext) -> GuiModuleWrapper<T> {
-        let size = Pt2::fill(256.0);
-        let target = TextureTarget::new(ctx.clone(), size);
+    fn new(module: T, ctx: RenderContext, bounds: Box3) -> GuiModuleWrapper<T> {
+        let target = TextureTarget::new(ctx.clone(), bounds.size.drop_z());
 
         GuiModuleWrapper {
             module,
@@ -337,16 +323,16 @@ impl<T: Module> GuiModuleWrapper<T> {
             delete_button: Button::new(
                 ctx,
                 "X".into(),
-                Rect2 {
-                    pos: Pt2::new(size.x - TITLE_BAR_HEIGHT - BORDER_SIZE, BORDER_SIZE),
-                    size: Pt2::fill(TITLE_BAR_HEIGHT),
+                Box3 {
+                    pos: Pt3::new(
+                        bounds.size.x - TITLE_BAR_HEIGHT - BORDER_SIZE,
+                        BORDER_SIZE,
+                        0.0,
+                    ),
+                    size: Pt3::new(TITLE_BAR_HEIGHT, TITLE_BAR_HEIGHT, 0.0),
                 },
             ),
-            window_rect: Rect2 {
-                pos: Pt2::fill(0.0),
-                size,
-            },
-            size,
+            bounds,
             drag: None,
             dirty: true,
         }
@@ -355,78 +341,98 @@ impl<T: Module> GuiModuleWrapper<T> {
         let title = &self.title();
         let ctx = self.target.ctx();
         // borders
-        ctx.draw_rect(Rect3::new(Pt3::fill(0.0), self.size), [1.0, 1.0, 1.0]);
+        ctx.draw_rect(
+            Rect3::new(Pt3::new(0.0, 0.0, 1.0), self.bounds.size.drop_z()),
+            [1.0, 1.0, 1.0],
+        );
         // background
         ctx.draw_rect(
             Rect3::new(
-                Pt3::new(BORDER_SIZE, BORDER_SIZE + TITLE_BAR_HEIGHT, 0.0),
-                self.size - Pt2::new(BORDER_SIZE * 2.0, BORDER_SIZE * 2.0 + TITLE_BAR_HEIGHT),
+                Pt3::new(BORDER_SIZE, BORDER_SIZE + TITLE_BAR_HEIGHT, 0.9),
+                self.bounds.size.drop_z() - Pt2::new(BORDER_SIZE * 2.0, BORDER_SIZE * 2.0 + TITLE_BAR_HEIGHT),
             ),
             [0.1, 0.1, 0.1],
         );
         // title bar
         ctx.draw_rect(
             Rect3::new(
-                Pt3::new(BORDER_SIZE, BORDER_SIZE, 0.0),
-                Pt2::new(self.size.x - BORDER_SIZE * 2.0, TITLE_BAR_HEIGHT),
+                Pt3::new(BORDER_SIZE, BORDER_SIZE, 0.9),
+                Pt2::new(self.bounds.size.x - BORDER_SIZE * 2.0, TITLE_BAR_HEIGHT),
             ),
             [0.0, 0.0, 0.0],
         );
-        ctx.draw_text(title, Pt2::new(4.0, 4.0), [1.0, 1.0, 1.0]);
+        ctx.draw_text(title, Pt3::new(4.0, 4.0, 0.8), [1.0, 1.0, 1.0]);
     }
 }
 
-impl<T> GuiElement for GuiModuleWrapper<T>
+enum GuiModuleUpdate {
+    Unchanged,
+    Closed,
+}
+
+impl<T> GuiComponent<GuiModuleUpdate> for GuiModuleWrapper<T>
 where
     T: Module,
 {
-    fn set_pos(&mut self, pos: Pt2) {
-        self.window_rect.pos = pos;
+    fn bounds(&self) -> Box3 {
+        self.bounds
     }
-    fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext, z_idx: f32) {
+    fn set_bounds(&mut self, bounds: Box3) {
+        self.bounds = bounds;
+    }
+    fn intersect(&self, pos: Pt2) -> bool {
+        self.bounds.flatten().drop_z().intersect(pos)
+    }
+    fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext) {
         if self.dirty {
             self.target.begin_frame();
             self.render_self();
-            self.delete_button
-                .render(device, self.target.ctx(), self.window_rect.upgrade(0.0));
+            self.delete_button.render(device, self.target.ctx());
             self.target.end_frame(device);
             self.dirty = false;
         }
 
-        ctx.draw_textured_rect(
-            self.window_rect.upgrade(z_idx),
-            self.target.shader_resource().clone(),
-        );
+        ctx.draw_textured_rect(self.bounds.flatten(), self.target.shader_resource().clone());
     }
-    fn update(&mut self, model: &Model) {
-        self.dirty |= ButtonUpdate::NeedRender
-            == self.delete_button
-                .update(model, self.window_rect.upgrade(0.0));
-        if let Some(drag) = self.drag {
-            self.window_rect.pos = -drag + model.mouse_pos;
-        }
-    }
-    fn handle(&mut self, model: &Model, event: &glutin::Event) {}
-    fn handle_click(&mut self, model: &Model, state: &glutin::ElementState, button: &glutin::MouseButton) {
-        use glutin::*;
-        match button {
-            MouseButton::Left => match state {
-                ElementState::Pressed => {
-                    let mut title_rect = self.window_rect;
-                    title_rect.size = Pt2::new(title_rect.size.x, TITLE_BAR_HEIGHT + BORDER_SIZE);
-                    if title_rect.intersect(model.mouse_pos) {
-                        self.drag = Some(model.mouse_pos - self.window_rect.pos);
+    fn handle(&mut self, event: &Event) -> GuiModuleUpdate {
+        let origin = self.bounds.pos.drop_z();
+        match event.data {
+            EventData::MouseMove(pos) => {
+                self.dirty |=
+                    ButtonUpdate::NeedRender == self.delete_button.handle(&event.translate(-origin));
+                if let Some(drag) = self.drag {
+                    self.bounds.pos.x = -drag.x + pos.x;
+                    self.bounds.pos.y = -drag.y + pos.y;
+                }
+                GuiModuleUpdate::Unchanged
+            }
+            EventData::Click(pos, button, state) => {
+                if self.delete_button.intersect(pos - origin) {
+                    if ButtonUpdate::Clicked == self.delete_button.handle(&event.translate(-origin)) {
+                        GuiModuleUpdate::Closed
+                    } else {
+                        GuiModuleUpdate::Unchanged
                     }
+                } else {
+                    match button {
+                        MouseButton::Left => match state {
+                            ButtonState::Pressed => {
+                                let mut title_rect = self.bounds.flatten().drop_z();
+                                title_rect.size = Pt2::new(title_rect.size.x, TITLE_BAR_HEIGHT + BORDER_SIZE);
+                                if title_rect.intersect(pos) {
+                                    self.drag = Some(pos - origin);
+                                }
+                            }
+                            ButtonState::Released => {
+                                self.drag = None;
+                            }
+                        },
+                        _ => {}
+                    }
+                    GuiModuleUpdate::Unchanged
                 }
-                ElementState::Released => {
-                    self.drag = None;
-                }
-            },
-            _ => {}
+            }
         }
-    }
-    fn intersect(&self, point: Pt2) -> bool {
-        self.window_rect.intersect(point)
     }
 }
 impl<T> Module for GuiModuleWrapper<T>

@@ -15,6 +15,9 @@ impl Pt2 {
     pub fn fill(x: f32) -> Pt2 {
         Pt2::new(x, x)
     }
+    pub fn with_z(self, z: f32) -> Pt3 {
+        Pt3::new(self.x, self.y, z)
+    }
 }
 impl From<Pt2> for [f32; 2] {
     fn from(val: Pt2) -> [f32; 2] {
@@ -72,6 +75,9 @@ impl Pt3 {
     pub fn fill(x: f32) -> Pt3 {
         Pt3::new(x, x, x)
     }
+    pub fn drop_z(self) -> Pt2 {
+        Pt2::new(self.x, self.y)
+    }
 }
 impl From<Pt3> for [f32; 3] {
     fn from(val: Pt3) -> [f32; 3] {
@@ -113,7 +119,7 @@ impl_binop_pt3!(Mul, mul);
 impl_binop_pt3!(Div, div);
 impl_uniop_pt3!(Neg, neg);
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Rect2 {
     pub pos: Pt2,
     pub size: Pt2,
@@ -123,14 +129,14 @@ impl Rect2 {
     pub fn new(pos: Pt2, size: Pt2) -> Rect2 {
         Rect2 { pos, size }
     }
-    pub fn upgrade(self, z: f32) -> Rect3 {
+    pub fn with_z(self, z: f32) -> Rect3 {
         Rect3 {
             pos: Pt3::new(self.pos.x, self.pos.y, z),
             size: self.size,
         }
     }
     /// upgrade to rect3 with z from other
-    pub fn upgrade_with(self, other: &Rect3) -> Rect3 {
+    pub fn with_z_from(self, other: &Rect3) -> Rect3 {
         Rect3 {
             pos: Pt3::new(self.pos.x, self.pos.y, other.pos.z),
             size: self.size,
@@ -145,7 +151,7 @@ impl Rect2 {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Rect3 {
     pub pos: Pt3,
     pub size: Pt2,
@@ -154,8 +160,21 @@ impl Rect3 {
     pub fn new(pos: Pt3, size: Pt2) -> Rect3 {
         Rect3 { pos, size }
     }
-    /// discard z
-    pub fn project(self) -> Rect2 {
-        Rect2::new(Pt2::new(self.pos.x, self.pos.y), self.size)
+    pub fn drop_z(self) -> Rect2 {
+        Rect2::new(self.pos.drop_z(), self.size)
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct Box3 {
+    pub pos: Pt3,
+    pub size: Pt3,
+}
+impl Box3 {
+    pub fn new(pos: Pt3, size: Pt3) -> Box3 {
+        Box3 { pos, size }
+    }
+    pub fn flatten(self) -> Rect3 {
+        Rect3::new(self.pos, self.size.drop_z())
     }
 }

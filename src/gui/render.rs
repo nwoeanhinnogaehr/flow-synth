@@ -235,6 +235,11 @@ impl TextRenderer {
     }
 }
 
+pub struct DepthRange {
+    pub near: f32,
+    pub far: f32,
+}
+
 pub struct RenderContext {
     factory: gl::Factory,
     encoder: Encoder<gl::Resources, gl::CommandBuffer>,
@@ -261,8 +266,10 @@ impl RenderContext {
         self.encoder.clear(&target.color, [0.0; 4]);
         self.encoder.clear_depth(&target.depth, 1.0);
     }
-    pub fn draw_text(&mut self, text: &str, pos: Pt2, color: [f32; 3]) {
-        self.texts.push(text, pos.into(), color);
+    pub fn draw_text(&mut self, text: &str, pos: Pt3, color: [f32; 3]) {
+        // for now we are discarding z because gfx_text can't handle it
+        // TODO write better text renderer
+        self.texts.push(text, [pos.x, pos.y], color);
     }
     pub fn draw_rect(&mut self, rect: Rect3, color: [f32; 3]) {
         self.rects.push(ColoredRect {
