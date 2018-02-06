@@ -12,6 +12,7 @@ pub struct Button {
     bounds: Box3,
 
     hover: bool,
+    clicking: bool,
 }
 
 impl Button {
@@ -20,6 +21,7 @@ impl Button {
             label,
             bounds,
             hover: false,
+            clicking: false,
         }
     }
 }
@@ -50,7 +52,15 @@ impl GuiComponent<ButtonUpdate> for Button {
                 self.bounds.pos + Pt3::new(BORDER_SIZE, BORDER_SIZE, 0.0),
                 self.bounds.flatten().size - BORDER_SIZE * 2.0,
             ),
-            if self.hover { [0.0; 3] } else { [0.1; 3] },
+            if self.clicking {
+                [0.0, 0.0, 0.3]
+            } else {
+                if self.hover {
+                    [0.0; 3]
+                } else {
+                    [0.1; 3]
+                }
+            },
         );
         ctx.draw_text(
             &self.label,
@@ -63,6 +73,9 @@ impl GuiComponent<ButtonUpdate> for Button {
             EventData::MouseMove(pos) => {
                 let hover = self.bounds.flatten().drop_z().intersect(pos);
                 if self.hover != hover {
+                    if !hover {
+                        self.clicking = false;
+                    }
                     self.hover = hover;
                     ButtonUpdate::NeedRender
                 } else {
@@ -70,9 +83,17 @@ impl GuiComponent<ButtonUpdate> for Button {
                 }
             }
             EventData::Click(pos, button, state)
-                if button == MouseButton::Left && state == ButtonState::Released && self.hover =>
+                if button == MouseButton::Left && state == ButtonState::Released && self.hover
+                    && self.clicking =>
             {
+                self.clicking = false;
                 ButtonUpdate::Clicked
+            }
+            EventData::Click(pos, button, state)
+                if button == MouseButton::Left && state == ButtonState::Pressed && self.hover =>
+            {
+                self.clicking = true;
+                ButtonUpdate::NeedRender
             }
             _ => ButtonUpdate::Unchanged,
         }

@@ -372,6 +372,16 @@ impl<T: Module> GuiModuleWrapper<T> {
         );
         ctx.draw_text(title, Pt3::new(4.0, 4.0, 0.8), [1.0, 1.0, 1.0]);
     }
+    fn handle_delete_button(&mut self, event: Event) -> GuiModuleUpdate {
+        match self.delete_button.handle(&event) {
+            ButtonUpdate::NeedRender => {
+                self.dirty = true;
+                GuiModuleUpdate::Unchanged
+            }
+            ButtonUpdate::Clicked => GuiModuleUpdate::Closed,
+            ButtonUpdate::Unchanged => GuiModuleUpdate::Unchanged,
+        }
+    }
 }
 
 enum GuiModuleUpdate {
@@ -407,21 +417,15 @@ where
         let origin = self.bounds.pos.drop_z();
         match event.data {
             EventData::MouseMove(pos) => {
-                self.dirty |=
-                    ButtonUpdate::NeedRender == self.delete_button.handle(&event.translate(-origin));
                 if let Some(drag) = self.drag {
                     self.bounds.pos.x = -drag.x + pos.x;
                     self.bounds.pos.y = -drag.y + pos.y;
                 }
-                GuiModuleUpdate::Unchanged
+                self.handle_delete_button(event.translate(-origin))
             }
             EventData::Click(pos, button, state) => {
                 if self.delete_button.intersect(pos - origin) {
-                    if ButtonUpdate::Clicked == self.delete_button.handle(&event.translate(-origin)) {
-                        GuiModuleUpdate::Closed
-                    } else {
-                        GuiModuleUpdate::Unchanged
-                    }
+                    self.handle_delete_button(event.translate(-origin))
                 } else {
                     match button {
                         MouseButton::Left => match state {
