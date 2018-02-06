@@ -318,6 +318,7 @@ pub struct TextureTarget {
 impl TextureTarget {
     pub fn new(ctx: RenderContext, size: Pt2) -> TextureTarget {
         let mut factory = ctx.factory().clone();
+        assert!(size.x >= 1.0 && size.y >= 1.0 && size.x <= 65535.0 && size.y <= 65535.0);
         let target_texture = factory
             .create_texture(
                 texture::Kind::D2(size.x as u16, size.y as u16, texture::AaMode::Single),
