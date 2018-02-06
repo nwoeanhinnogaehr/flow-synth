@@ -172,16 +172,22 @@ impl MenuView {
             }
         }
     }
-    fn intersect_impl<'a>(&self, menu: &'a Menu, offset: Pt2, path: &mut Vec<&'a str>) {
+    // Returns true if an item is hovered (false for a submenu)
+    fn intersect_impl<'a>(&self, menu: &'a Menu, offset: Pt2, path: &mut Vec<&'a str>) -> bool {
         for (item, pos) in with_item_pos(menu.items.iter(), offset) {
             if let Some(sub_menu) = item.sub_menu() {
-                if sub_menu.open && sub_menu.any_children_hovered() || item.hover {
+                if item.hover { // on a submenu label
+                    return false;
+                }
+                if sub_menu.open && sub_menu.any_children_hovered() {
                     path.push(item.label());
-                    self.intersect_impl(
+                    if !self.intersect_impl(
                         sub_menu,
                         pos + Pt2::new(ITEM_WIDTH - BORDER_SIZE, 0.0),
                         path,
-                    );
+                    ) {
+                        return false;
+                    }
                 }
             } else {
                 if item.hover {
@@ -189,16 +195,26 @@ impl MenuView {
                 }
             }
         }
+        return true;
     }
-    fn selection(&self, offset: Pt2) -> Vec<&str> {
+    // returns Some([]) if a submenu is selected
+    // or None if nothing is hit
+    fn selection(&self, offset: Pt2) -> Option<Vec<&str>> {
         let mut path = Vec::new();
-        self.intersect_impl(&self.menu, offset, &mut path);
-        path
+        if self.intersect_impl(&self.menu, offset, &mut path) {
+            if path.is_empty() {
+                None
+            } else {
+                Some(path)
+            }
+        } else {
+            Some(Vec::new())
+        }
     }
     fn update_menu(time: f32, mouse_pos: Pt2, menu: &mut Menu, offset: Pt2) {
         for (item, pos) in with_item_pos(menu.items.iter_mut(), offset) {
             item.hover =
-                Rect2::new(pos, Pt2::new(ITEM_WIDTH, ITEM_HEIGHT) - BORDER_SIZE).intersect(mouse_pos);
+                Rect2::new(pos, Pt2::new(ITEM_WIDTH, ITEM_HEIGHT)).intersect(mouse_pos);
             // Update last time mouse touched this item or submenu of it
             if (item.hover
                 || item.sub_menu()
@@ -245,7 +261,7 @@ impl GuiComponent<MenuUpdate> for MenuView {
         self.bounds = bounds;
     }
     fn intersect(&self, pos: Pt2) -> bool {
-        !self.selection(pos).is_empty()
+        self.selection(pos).is_some()
     }
     fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext) {
         if self.dirty {
@@ -272,8 +288,12 @@ impl GuiComponent<MenuUpdate> for MenuView {
             EventData::Click(pos, button, state)
                 if button == MouseButton::Left && state == ButtonState::Released =>
             {
-                let path = self.selection(pos).iter().map(|&x| x.into()).collect();
-                MenuUpdate::Select(path)
+                let path: Vec<_> = self.selection(pos).unwrap_or(Vec::new()).iter().map(|&x| x.into()).collect();
+                if path.is_empty() {
+                    MenuUpdate::Unchanged
+                } else {
+                    MenuUpdate::Select(path)
+                }
             }
             _ => MenuUpdate::Unchanged,
         }

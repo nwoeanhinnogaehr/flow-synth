@@ -66,8 +66,11 @@ impl Model {
                 match status {
                     MenuUpdate::Select(path) => {
                         let name = path[0].as_ref();
-                        let module = self.module_types.iter().find(|ty| ty.name == name).unwrap();
-                        self.new_module(module, Rect2::new(self.mouse_pos, Pt2::fill(256.0)));
+                        if let Some(module) = self.module_types.iter().find(|ty| ty.name == name) {
+                            self.new_module(module, Rect2::new(self.mouse_pos, Pt2::fill(256.0)));
+                        } else {
+                            println!("Couldn't find module {}", name);
+                        }
                         self.context_menu = None;
                     }
                     _ => (),
@@ -100,8 +103,10 @@ impl Model {
             self.open_new_module_menu();
         }
         // left click - abort menu
-        if ButtonState::Pressed == state && MouseButton::Left == button {
-            self.context_menu = None;
+        if let Some(menu) = self.context_menu.as_mut() {
+            if !menu.intersect(self.mouse_pos) && ButtonState::Pressed == state && MouseButton::Left == button {
+                self.context_menu = None;
+            }
         }
     }
 
