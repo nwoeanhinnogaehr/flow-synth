@@ -255,7 +255,7 @@ pub fn gui_main() {
     let mut running = true;
     let timer = Instant::now();
     let mut frames = VecDeque::new();
-    while running {
+    loop {
         // update fps
         let now = timer.elapsed();
         model.time = now.as_secs() as f32 + now.subsec_nanos() as f32 / 1_000_000_000.0;
@@ -286,6 +286,10 @@ pub fn gui_main() {
                 _ => (),
             }
         });
+
+        if !running {
+            break;
+        }
 
         ctx.begin_frame(&target);
 
