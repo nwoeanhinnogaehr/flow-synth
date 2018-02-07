@@ -23,5 +23,5 @@ pub trait GuiComponent<Status = ()> {
 }
 
 impl<Status> Module for GuiComponent<Status> {
-    type Args = Box3;
+    type Arg = Box3;
 }

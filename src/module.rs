@@ -19,6 +19,6 @@ impl<M: mf::Module> Module for TestModule<M> {
         println!("start!!");
     }
     fn title(&self) -> String {
-        self.ifc.meta().name.to_string()
+        self.ifc.meta().name().to_string()
     }
 }

@@ -65,8 +65,8 @@ impl Model {
                 let status = menu.handle(&event);
                 match status {
                     MenuUpdate::Select(path) => {
-                        let name = path[0].as_ref();
-                        if let Some(module) = self.module_types.iter().find(|ty| ty.name == name) {
+                        let name: &str = path[0].as_ref();
+                        if let Some(module) = self.module_types.iter().find(|ty| ty.name() == name) {
                             self.new_module(module, Rect2::new(self.mouse_pos, Pt2::fill(256.0)));
                         } else {
                             println!("Couldn't find module {}", name);
@@ -155,7 +155,7 @@ impl Model {
             ),
             Menu::new(&self.module_types
                 .iter()
-                .map(|ty| menu::item(&ty.name))
+                .map(|ty| menu::item(&ty.name()))
                 .collect::<Vec<_>>()),
         ));
     }
