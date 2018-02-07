@@ -71,6 +71,14 @@ impl<T: Module> GuiModuleWrapper<T> {
         self.target
             .ctx()
             .draw_text(title, Pt3::new(4.0, 4.0, 0.8), [1.0, 1.0, 1.0]);
+
+        for (idx, port) in self.module.ports().iter().enumerate() {
+            self.target.ctx().draw_text(
+                port.meta().name(),
+                Pt3::new(4.0, 4.0 + TITLE_BAR_HEIGHT + idx as f32 * 20.0, 0.8),
+                [1.0, 1.0, 1.0],
+            );
+        }
     }
     fn handle_delete_button(&mut self, event: Event) -> GuiModuleUpdate {
         match self.delete_button.handle(&event) {

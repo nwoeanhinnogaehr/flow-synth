@@ -314,4 +314,3 @@ pub fn gui_main() {
         device.cleanup();
     }
 }
-
