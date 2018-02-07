@@ -104,7 +104,8 @@ impl Model {
         }
         // left click - abort menu
         if let Some(menu) = self.context_menu.as_mut() {
-            if !menu.intersect(self.mouse_pos) && ButtonState::Pressed == state && MouseButton::Left == button {
+            if !menu.intersect(self.mouse_pos) && ButtonState::Pressed == state && MouseButton::Left == button
+            {
                 self.context_menu = None;
             }
         }
@@ -352,15 +353,13 @@ impl<T: Module> GuiModuleWrapper<T> {
         }
     }
     fn render_self(&mut self) {
-        let title = &self.title();
-        let ctx = self.target.ctx();
         // borders
-        ctx.draw_rect(
+        self.target.ctx().draw_rect(
             Rect3::new(Pt3::new(0.0, 0.0, 1.0), self.bounds.size.drop_z()),
             [1.0, 1.0, 1.0],
         );
         // background
-        ctx.draw_rect(
+        self.target.ctx().draw_rect(
             Rect3::new(
                 Pt3::new(BORDER_SIZE, BORDER_SIZE + TITLE_BAR_HEIGHT, 0.9),
                 self.bounds.size.drop_z() - Pt2::new(BORDER_SIZE * 2.0, BORDER_SIZE * 2.0 + TITLE_BAR_HEIGHT),
@@ -368,14 +367,17 @@ impl<T: Module> GuiModuleWrapper<T> {
             [0.1, 0.1, 0.1],
         );
         // title bar
-        ctx.draw_rect(
+        self.target.ctx().draw_rect(
             Rect3::new(
                 Pt3::new(BORDER_SIZE, BORDER_SIZE, 0.9),
                 Pt2::new(self.bounds.size.x - BORDER_SIZE * 2.0, TITLE_BAR_HEIGHT),
             ),
             [0.0, 0.0, 0.0],
         );
-        ctx.draw_text(title, Pt3::new(4.0, 4.0, 0.8), [1.0, 1.0, 1.0]);
+        let title = &self.module.title();
+        self.target
+            .ctx()
+            .draw_text(title, Pt3::new(4.0, 4.0, 0.8), [1.0, 1.0, 1.0]);
     }
     fn handle_delete_button(&mut self, event: Event) -> GuiModuleUpdate {
         match self.delete_button.handle(&event) {
@@ -451,16 +453,5 @@ where
                 }
             }
         }
-    }
-}
-impl<T> Module for GuiModuleWrapper<T>
-where
-    T: Module,
-{
-    fn start(&mut self) {
-        T::start(&mut self.module);
-    }
-    fn title(&self) -> String {
-        T::title(&self.module)
     }
 }

@@ -176,7 +176,8 @@ impl MenuView {
     fn intersect_impl<'a>(&self, menu: &'a Menu, offset: Pt2, path: &mut Vec<&'a str>) -> bool {
         for (item, pos) in with_item_pos(menu.items.iter(), offset) {
             if let Some(sub_menu) = item.sub_menu() {
-                if item.hover { // on a submenu label
+                if item.hover {
+                    // on a submenu label
                     return false;
                 }
                 if sub_menu.open && sub_menu.any_children_hovered() {
@@ -213,8 +214,7 @@ impl MenuView {
     }
     fn update_menu(time: f32, mouse_pos: Pt2, menu: &mut Menu, offset: Pt2) {
         for (item, pos) in with_item_pos(menu.items.iter_mut(), offset) {
-            item.hover =
-                Rect2::new(pos, Pt2::new(ITEM_WIDTH, ITEM_HEIGHT)).intersect(mouse_pos);
+            item.hover = Rect2::new(pos, Pt2::new(ITEM_WIDTH, ITEM_HEIGHT)).intersect(mouse_pos);
             // Update last time mouse touched this item or submenu of it
             if (item.hover
                 || item.sub_menu()
@@ -288,7 +288,11 @@ impl GuiComponent<MenuUpdate> for MenuView {
             EventData::Click(pos, button, state)
                 if button == MouseButton::Left && state == ButtonState::Released =>
             {
-                let path: Vec<_> = self.selection(pos).unwrap_or(Vec::new()).iter().map(|&x| x.into()).collect();
+                let path: Vec<_> = self.selection(pos)
+                    .unwrap_or(Vec::new())
+                    .iter()
+                    .map(|&x| x.into())
+                    .collect();
                 if path.is_empty() {
                     MenuUpdate::Unchanged
                 } else {
