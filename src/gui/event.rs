@@ -6,14 +6,13 @@ use glutin;
 pub struct Event {
     pub time: f32,
     pub scope: Scope,
-    pub data: EventData
+    pub data: EventData,
 }
 
 impl Event {
     pub fn translate(mut self, offset: Pt2) -> Event {
         match &mut self.data {
-            EventData::MouseMove(ref mut pos) |
-                EventData::Click(ref mut pos, _, _) => *pos = *pos + offset,
+            EventData::MouseMove(ref mut pos) | EventData::Click(ref mut pos, _, _) => *pos = *pos + offset,
         }
         self
     }

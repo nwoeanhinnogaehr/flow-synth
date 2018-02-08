@@ -66,7 +66,8 @@ impl Model {
             } => match event {
                 Resized(w, h) => {
                     self.window_size = Pt2::new(*w as f32, *h as f32);
-                    self.root.set_bounds(Box3::new(Pt3::zero(), self.window_size.with_z(0.0)));
+                    self.root
+                        .set_bounds(Box3::new(Pt3::zero(), self.window_size.with_z(0.0)));
                 }
                 CursorMoved {
                     device_id: _,
@@ -82,7 +83,11 @@ impl Model {
                     button,
                     modifiers: _,
                 } => {
-                    self.generate_event(EventData::Click(self.mouse_pos, button.into(), state.into()));
+                    self.generate_event(EventData::Click(
+                        self.mouse_pos,
+                        button.into(),
+                        state.into(),
+                    ));
                 }
                 _ => (),
             },

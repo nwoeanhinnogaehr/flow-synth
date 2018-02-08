@@ -11,10 +11,21 @@ use super::menu::*;
 use modular_flow as mf;
 use gfx_device_gl as gl;
 
-use std::sync::{Mutex, Arc};
+use std::sync::Arc;
+use std::cell::{RefCell, RefMut};
 use std::cmp::Ordering;
 
-type OwnedModule = Mutex<Box<GuiComponent<GuiModuleUpdate>>>; // TODO this can be a refcell
+struct OwnedModule {
+    value: RefCell<Box<GuiComponent<GuiModuleUpdate>>>,
+}
+impl OwnedModule {
+    pub fn get(&self) -> RefMut<Box<GuiComponent<GuiModuleUpdate>>> {
+        self.value.borrow_mut()
+    }
+}
+impl mf::Module for OwnedModule {
+    type Arg = Box3;
+}
 type Graph = mf::Graph<OwnedModule>;
 type Node = mf::Node<OwnedModule>;
 
@@ -60,8 +71,8 @@ impl Root {
     }
 
     fn compare_node_z(a: &Arc<Node>, b: &Arc<Node>) -> Ordering {
-        let a_z = a.module().lock().unwrap().bounds().pos.z;
-        let b_z = b.module().lock().unwrap().bounds().pos.z;
+        let a_z = a.module().get().bounds().pos.z;
+        let b_z = b.module().get().bounds().pos.z;
         a_z.partial_cmp(&b_z).unwrap()
     }
 
@@ -79,7 +90,7 @@ impl Root {
         });
         let max = nodes.len() as f32;
         for (idx, node) in nodes.iter().enumerate() {
-            let mut module = node.module().lock().unwrap();
+            let mut module = node.module().get();
             let mut bounds = module.bounds();
             bounds.pos.z = idx as f32 / max;
             bounds.size.z = 1.0 / max;
@@ -102,7 +113,7 @@ impl GuiComponent for Root {
         // render nodes
         let graph_nodes = self.graph.node_map();
         for (id, node) in &graph_nodes {
-            let mut module = node.module().lock().unwrap();
+            let mut module = node.module().get();
             module.render(device, ctx);
         }
 
@@ -113,8 +124,7 @@ impl GuiComponent for Root {
     }
     fn handle(&mut self, event: &Event) {
         match event.data {
-            EventData::MouseMove(pos) |
-            EventData::Click(pos, _, _) => {
+            EventData::MouseMove(pos) | EventData::Click(pos, _, _) => {
                 // march from front to back, if we hit something set this flag so that we only send
                 // one local event
                 let mut hit = false;
@@ -145,7 +155,7 @@ impl GuiComponent for Root {
                 let mut nodes = self.graph.nodes();
                 nodes.sort_by(Self::compare_node_z);
                 for node in &nodes {
-                    let mut module = node.module().lock().unwrap();
+                    let mut module = node.module().get();
                     if event.scope == Scope::Global {
                         module.handle(event); // assume global events are boring
                     } else if !hit && module.intersect(pos) {
@@ -171,7 +181,9 @@ impl GuiComponent for Root {
                     }
                     // left click - abort menu
                     if let Some(menu) = self.context_menu.as_mut() {
-                        if !menu.intersect(pos) && ButtonState::Pressed == state && MouseButton::Left == button {
+                        if !menu.intersect(pos) && ButtonState::Pressed == state
+                            && MouseButton::Left == button
+                        {
                             self.context_menu = None;
                         }
                     }
@@ -186,15 +198,14 @@ fn load_metamodules(ctx: RenderContext) -> Vec<mf::MetaModule<OwnedModule>> {
     let mod_ctx = ctx;
     let test_module = mf::MetaModule::new(
         "TestModule",
-        Arc::new(move |ifc, bounds| {
-            Mutex::new(Box::new(GuiModuleWrapper::new(
+        Arc::new(move |ifc, bounds| OwnedModule {
+            value: RefCell::new(Box::new(GuiModuleWrapper::new(
                 TestModule::new(ifc),
                 mod_ctx.clone(),
                 bounds,
-            )) as Box<GuiComponent<GuiModuleUpdate>>)
+            )) as Box<GuiComponent<GuiModuleUpdate>>),
         }),
     );
     modules.push(test_module);
     modules
 }
-

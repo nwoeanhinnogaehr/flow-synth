@@ -124,46 +124,43 @@ where
     fn handle(&mut self, event: &Event) -> GuiModuleUpdate {
         let origin = self.bounds.pos.drop_z();
         match event.scope {
-            Scope::Global => {
-                self.handle_delete_button(event.translate(-origin))
-            },
-            Scope::Local => {
-                match event.data {
-                    EventData::MouseMove(pos) => {
-                        if let Some(drag) = self.drag {
-                            self.bounds.pos.x = -drag.x + pos.x;
-                            self.bounds.pos.y = -drag.y + pos.y;
-                        }
-                        if self.delete_button.intersect(pos - origin) {
-                            self.handle_delete_button(event.translate(-origin))
-                        } else {
-                            GuiModuleUpdate::Unchanged
-                        }
+            Scope::Global => self.handle_delete_button(event.translate(-origin)),
+            Scope::Local => match event.data {
+                EventData::MouseMove(pos) => {
+                    if let Some(drag) = self.drag {
+                        self.bounds.pos.x = -drag.x + pos.x;
+                        self.bounds.pos.y = -drag.y + pos.y;
                     }
-                    EventData::Click(pos, button, state) => {
-                        if self.delete_button.intersect(pos - origin) {
-                            self.handle_delete_button(event.translate(-origin))
-                        } else {
-                            match button {
-                                MouseButton::Left => match state {
-                                    ButtonState::Pressed => {
-                                        let mut title_rect = self.bounds.flatten().drop_z();
-                                        title_rect.size = Pt2::new(title_rect.size.x, TITLE_BAR_HEIGHT + BORDER_SIZE);
-                                        if title_rect.intersect(pos) {
-                                            self.drag = Some(pos - origin);
-                                        }
-                                    }
-                                    ButtonState::Released => {
-                                        self.drag = None;
-                                    }
-                                },
-                                _ => {}
-                            }
-                            GuiModuleUpdate::Unchanged
-                        }
+                    if self.delete_button.intersect(pos - origin) {
+                        self.handle_delete_button(event.translate(-origin))
+                    } else {
+                        GuiModuleUpdate::Unchanged
                     }
                 }
-            }
+                EventData::Click(pos, button, state) => {
+                    if self.delete_button.intersect(pos - origin) {
+                        self.handle_delete_button(event.translate(-origin))
+                    } else {
+                        match button {
+                            MouseButton::Left => match state {
+                                ButtonState::Pressed => {
+                                    let mut title_rect = self.bounds.flatten().drop_z();
+                                    title_rect.size =
+                                        Pt2::new(title_rect.size.x, TITLE_BAR_HEIGHT + BORDER_SIZE);
+                                    if title_rect.intersect(pos) {
+                                        self.drag = Some(pos - origin);
+                                    }
+                                }
+                                ButtonState::Released => {
+                                    self.drag = None;
+                                }
+                            },
+                            _ => {}
+                        }
+                        GuiModuleUpdate::Unchanged
+                    }
+                }
+            },
         }
     }
 }
