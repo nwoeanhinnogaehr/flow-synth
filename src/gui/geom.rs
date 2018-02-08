@@ -10,10 +10,7 @@ impl Pt2 {
         Pt2 { x, y }
     }
     pub fn zero() -> Pt2 {
-        Pt2::fill(0.0)
-    }
-    pub fn fill(x: f32) -> Pt2 {
-        Pt2::new(x, x)
+        0.0.into()
     }
     pub fn with_z(self, z: f32) -> Pt3 {
         Pt3::new(self.x, self.y, z)
@@ -22,6 +19,11 @@ impl Pt2 {
 impl From<Pt2> for [f32; 2] {
     fn from(val: Pt2) -> [f32; 2] {
         [val.x, val.y]
+    }
+}
+impl From<f32> for Pt2 {
+    fn from(val: f32) -> Pt2 {
+        Pt2::new(val, val)
     }
 }
 macro_rules! impl_binop_pt2 {
@@ -70,10 +72,7 @@ impl Pt3 {
         Pt3 { x, y, z }
     }
     pub fn zero() -> Pt3 {
-        Pt3::fill(0.0)
-    }
-    pub fn fill(x: f32) -> Pt3 {
-        Pt3::new(x, x, x)
+        0.0.into()
     }
     pub fn drop_z(self) -> Pt2 {
         Pt2::new(self.x, self.y)
@@ -82,6 +81,11 @@ impl Pt3 {
 impl From<Pt3> for [f32; 3] {
     fn from(val: Pt3) -> [f32; 3] {
         [val.x, val.y, val.z]
+    }
+}
+impl From<f32> for Pt3 {
+    fn from(val: f32) -> Pt3 {
+        Pt3::new(val, val, val)
     }
 }
 macro_rules! impl_binop_pt3 {

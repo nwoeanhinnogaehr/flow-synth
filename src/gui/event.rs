@@ -5,22 +5,27 @@ use glutin;
 #[derive(Copy, Clone, Debug)]
 pub struct Event {
     pub time: f32,
-    pub data: EventData,
+    pub scope: Scope,
+    pub data: EventData
 }
 
 impl Event {
-    pub fn translate(&self, offset: Pt2) -> Event {
-        match self.data {
-            EventData::MouseMove(pos) => Event {
-                data: EventData::MouseMove(pos + offset),
-                ..*self
-            },
-            EventData::Click(pos, button, state) => Event {
-                data: EventData::Click(pos + offset, button, state),
-                ..*self
-            },
+    pub fn translate(mut self, offset: Pt2) -> Event {
+        match &mut self.data {
+            EventData::MouseMove(ref mut pos) |
+                EventData::Click(ref mut pos, _, _) => *pos = *pos + offset,
         }
+        self
     }
+}
+
+/// Local events only fire if they interact directly with the object handling them,
+/// for example focused key presses or mouse clicks that intersect the object.
+/// non-local events are fired regardless of focus or visibility.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Scope {
+    Local,
+    Global,
 }
 
 #[derive(Copy, Clone, Debug)]
