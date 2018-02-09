@@ -47,12 +47,7 @@ impl Model {
         self.root.handle(&Event {
             time: self.time,
             data,
-            scope: Scope::Local,
-        });
-        self.root.handle(&Event {
-            time: self.time,
-            data,
-            scope: Scope::Global,
+            focus: true,
         });
     }
 

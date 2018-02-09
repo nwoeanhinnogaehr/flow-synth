@@ -126,16 +126,14 @@ impl GuiComponent for Root {
         match event.data {
             EventData::MouseMove(pos) | EventData::Click(pos, _, _) => {
                 // march from front to back, if we hit something set this flag so that we only send
-                // one local event
+                // one event with focus
                 let mut hit = false;
 
                 // intersect menu
                 if let Some(menu) = self.context_menu.as_mut() {
-                    if event.scope == Scope::Global {
-                        menu.handle(event); // assume global events are boring
-                    } else if menu.intersect(pos) {
+                    if menu.intersect(pos) {
                         hit = true;
-                        let status = menu.handle(event);
+                        let status = menu.handle(&event.with_focus(true));
                         match status {
                             MenuUpdate::Select(path) => {
                                 let name: &str = path[0].as_ref();
@@ -148,6 +146,9 @@ impl GuiComponent for Root {
                             }
                             _ => (),
                         }
+                    } else {
+                        // assume unfocused events are boring
+                        menu.handle(&event.with_focus(false));
                     }
                 }
 
@@ -156,11 +157,9 @@ impl GuiComponent for Root {
                 nodes.sort_by(Self::compare_node_z);
                 for node in &nodes {
                     let mut module = node.module().get();
-                    if event.scope == Scope::Global {
-                        module.handle(event); // assume global events are boring
-                    } else if !hit && module.intersect(pos) {
+                    if !hit && module.intersect(pos) {
                         hit = true;
-                        let status = module.handle(&event);
+                        let status = module.handle(&event.with_focus(true));
                         drop(module); // move_to_front will lock it again
                         if let EventData::Click(_, _, _) = event.data {
                             match status {
@@ -171,6 +170,9 @@ impl GuiComponent for Root {
                             }
                             self.move_to_front(node.id());
                         }
+                    } else {
+                        // assume unfocused events are boring
+                        module.handle(&event.with_focus(false));
                     }
                 }
 

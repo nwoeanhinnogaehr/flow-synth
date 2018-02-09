@@ -5,7 +5,7 @@ use glutin;
 #[derive(Copy, Clone, Debug)]
 pub struct Event {
     pub time: f32,
-    pub scope: Scope,
+    pub focus: bool,
     pub data: EventData,
 }
 
@@ -16,15 +16,10 @@ impl Event {
         }
         self
     }
-}
-
-/// Local events only fire if they interact directly with the object handling them,
-/// for example focused key presses or mouse clicks that intersect the object.
-/// non-local events are fired regardless of focus or visibility.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Scope {
-    Local,
-    Global,
+    pub fn with_focus(mut self, focus: bool) -> Event {
+        self.focus = focus;
+        self
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
