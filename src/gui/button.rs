@@ -53,7 +53,11 @@ impl GuiComponent<ButtonUpdate> for Button {
                 self.bounds.flatten().size - BORDER_SIZE * 2.0,
             ),
             if self.clicking {
-                [0.0, 0.0, 0.3]
+                if self.hover {
+                    [0.0, 0.0, 0.3]
+                } else {
+                    [0.1, 0.1, 0.3]
+                }
             } else {
                 if self.hover {
                     [0.0; 3]
@@ -73,9 +77,6 @@ impl GuiComponent<ButtonUpdate> for Button {
             EventData::MouseMove(pos) => {
                 let hover = self.bounds.flatten().drop_z().intersect(pos);
                 if self.hover != hover {
-                    if !hover {
-                        self.clicking = false;
-                    }
                     self.hover = hover;
                     ButtonUpdate::NeedRender
                 } else {
@@ -83,14 +84,17 @@ impl GuiComponent<ButtonUpdate> for Button {
                 }
             }
             EventData::Click(pos, button, state)
-                if button == MouseButton::Left && state == ButtonState::Released && self.hover
-                    && self.clicking =>
+                if button == MouseButton::Left && state == ButtonState::Released && self.clicking =>
             {
                 self.clicking = false;
-                ButtonUpdate::Clicked
+                if self.hover {
+                    ButtonUpdate::Clicked
+                } else {
+                    ButtonUpdate::NeedRender
+                }
             }
             EventData::Click(pos, button, state)
-                if button == MouseButton::Left && state == ButtonState::Pressed && self.hover =>
+                if event.focus && button == MouseButton::Left && state == ButtonState::Pressed && self.hover =>
             {
                 self.clicking = true;
                 ButtonUpdate::NeedRender

@@ -132,7 +132,7 @@ where
                 self.handle_delete_button(event.translate(-origin))
             }
             EventData::Click(pos, button, state) => {
-                if !self.delete_button.intersect(pos - origin) {
+                if event.focus && !self.delete_button.intersect(pos - origin) {
                     match button {
                         MouseButton::Left => match state {
                             ButtonState::Pressed => {
