@@ -52,6 +52,21 @@ gfx_defines! {
             write: true,
         },
     }
+
+    vertex PipeVertex {
+        translate: [f32; 3] = "a_Translate",
+        color: [f32; 4] = "a_Color",
+    }
+
+    pipeline pipe_pipe { // pipe line
+        resolution: gfx::Global<[f32; 2]> = "i_Resolution",
+        vertices: gfx::VertexBuffer<PipeVertex> = (),
+        out: gfx::BlendTarget<ColorFormat> = ("Target0", gfx::state::ColorMask::all(), gfx::preset::blend::ALPHA),
+        depth: gfx::DepthTarget<DepthFormat> = gfx::state::Depth {
+            fun: gfx::state::Comparison::LessEqual,
+            write: true,
+        },
+    }
 }
 pub struct Target {
     pub color: RenderTargetView<gl::Resources, ColorFormat>,
@@ -60,12 +75,18 @@ pub struct Target {
 
 fn rect(x: f32, y: f32, w: f32, h: f32) -> [Vertex; 4] {
     [
-        Vertex { pos: [x, y] },
-        Vertex { pos: [x, y + h] },
+        Vertex {
+            pos: [x, y],
+        },
+        Vertex {
+            pos: [x, y + h],
+        },
         Vertex {
             pos: [x + w, y + h],
         },
-        Vertex { pos: [x + w, y] },
+        Vertex {
+            pos: [x + w, y],
+        },
     ]
 }
 
@@ -235,9 +256,79 @@ impl TextRenderer {
     }
 }
 
-pub struct DepthRange {
-    pub near: f32,
-    pub far: f32,
+#[derive(Clone)]
+struct PipeRenderer {
+    paths: Vec<Vec<Pt3>>,
+    pso: PipelineState<gl::Resources, pipe_pipe::Meta>,
+    factory: gl::Factory,
+}
+impl PipeRenderer {
+    fn new(mut factory: gl::Factory) -> PipeRenderer {
+        let pso = factory
+            .create_pipeline_simple(
+                include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/shaders/pipe_150.glslv"
+                )),
+                include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/shaders/pipe_150.glslf"
+                )),
+                pipe_pipe::new(),
+            )
+            .unwrap();
+        PipeRenderer {
+            paths: Vec::new(),
+            pso,
+            factory,
+        }
+    }
+    fn push(&mut self, points: &[Pt3]) {
+        self.paths.push(points.into());
+    }
+    fn draw(&mut self, encoder: &mut Encoder<gl::Resources, gl::CommandBuffer>, target: &Target) {
+        const RADIUS: f32 = 2.0;
+        let mut vertices: Vec<PipeVertex> = Vec::new();
+        let mut indices: Vec<u32> = Vec::new();
+        for path in self.paths.drain(..) {
+            for window in path.windows(2) {
+                let p0 = window[0];
+                let p1 = window[1];
+                let line = (p0 - p1).drop_z();
+                let line = line / (line.x * line.x + line.y * line.y).sqrt();
+                let line = Pt3::new(line.y, -line.x, 0.0);
+                let idx0 = vertices.len() as u32;
+                vertices.extend(&[
+                    PipeVertex {
+                        translate: (p0 - line * RADIUS).into(),
+                        color: [0.0, 1.0, 0.0, 0.3],
+                    },
+                    PipeVertex {
+                        translate: (p0 + line * RADIUS).into(),
+                        color: [0.0, 1.0, 0.0, 0.3],
+                    },
+                    PipeVertex {
+                        translate: (p1 - line * RADIUS).into(),
+                        color: [0.0, 1.0, 0.0, 0.3],
+                    },
+                    PipeVertex {
+                        translate: (p1 + line * RADIUS).into(),
+                        color: [0.0, 1.0, 0.0, 0.3],
+                    },
+                ]);
+                indices.extend(&[idx0, idx0 + 1, idx0 + 2, idx0 + 1, idx0 + 2, idx0 + 3]);
+            }
+        }
+        let (vertex_buffer, slice) = self.factory
+            .create_vertex_buffer_with_slice(&vertices, &indices[..]);
+        let data = pipe_pipe::Data {
+            resolution: target_dimensions(target),
+            vertices: vertex_buffer,
+            out: target.color.clone(),
+            depth: target.depth.clone(),
+        };
+        encoder.draw(&slice, &self.pso, &data);
+    }
 }
 
 pub struct RenderContext {
@@ -246,6 +337,7 @@ pub struct RenderContext {
     rects: RectRenderer,
     textured_rects: TexturedRectRenderer,
     texts: TextRenderer,
+    pipes: PipeRenderer,
 }
 impl RenderContext {
     pub fn new(mut factory: gl::Factory) -> RenderContext {
@@ -253,6 +345,7 @@ impl RenderContext {
         let rects = RectRenderer::new(factory.clone());
         let textured_rects = TexturedRectRenderer::new(factory.clone());
         let texts = TextRenderer::new(factory.clone());
+        let pipes = PipeRenderer::new(factory.clone());
 
         RenderContext {
             factory,
@@ -260,6 +353,7 @@ impl RenderContext {
             rects,
             textured_rects,
             texts,
+            pipes,
         }
     }
     pub fn begin_frame(&mut self, target: &Target) {
@@ -281,6 +375,9 @@ impl RenderContext {
     pub fn draw_textured_rect(&mut self, rect: Rect3, texture: ShaderResourceView<gl::Resources, [f32; 4]>) {
         self.textured_rects.push(rect, texture);
     }
+    pub fn draw_pipe(&mut self, points: &[Pt3]) {
+        self.pipes.push(points);
+    }
     pub fn factory(&self) -> &gl::Factory {
         &self.factory
     }
@@ -288,6 +385,7 @@ impl RenderContext {
         self.rects.draw(&mut self.encoder, target);
         self.textured_rects.draw(&mut self.encoder, target);
         self.texts.draw(&mut self.encoder, target);
+        self.pipes.draw(&mut self.encoder, target);
         self.encoder.flush(device);
     }
 }
@@ -302,6 +400,7 @@ impl Clone for RenderContext {
             rects: self.rects.clone(),
             textured_rects: self.textured_rects.clone(),
             texts: self.texts.clone(),
+            pipes: self.pipes.clone(),
         }
     }
 }

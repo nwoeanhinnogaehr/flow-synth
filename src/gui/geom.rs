@@ -7,7 +7,10 @@ pub struct Pt2 {
 }
 impl Pt2 {
     pub fn new(x: f32, y: f32) -> Pt2 {
-        Pt2 { x, y }
+        Pt2 {
+            x,
+            y,
+        }
     }
     pub fn zero() -> Pt2 {
         0.0.into()
@@ -69,7 +72,11 @@ pub struct Pt3 {
 }
 impl Pt3 {
     pub fn new(x: f32, y: f32, z: f32) -> Pt3 {
-        Pt3 { x, y, z }
+        Pt3 {
+            x,
+            y,
+            z,
+        }
     }
     pub fn zero() -> Pt3 {
         0.0.into()
@@ -131,7 +138,10 @@ pub struct Rect2 {
 
 impl Rect2 {
     pub fn new(pos: Pt2, size: Pt2) -> Rect2 {
-        Rect2 { pos, size }
+        Rect2 {
+            pos,
+            size,
+        }
     }
     pub fn with_z(self, z: f32) -> Rect3 {
         Rect3 {
@@ -162,7 +172,10 @@ pub struct Rect3 {
 }
 impl Rect3 {
     pub fn new(pos: Pt3, size: Pt2) -> Rect3 {
-        Rect3 { pos, size }
+        Rect3 {
+            pos,
+            size,
+        }
     }
     pub fn drop_z(self) -> Rect2 {
         Rect2::new(self.pos.drop_z(), self.size)
@@ -176,7 +189,10 @@ pub struct Box3 {
 }
 impl Box3 {
     pub fn new(pos: Pt3, size: Pt3) -> Box3 {
-        Box3 { pos, size }
+        Box3 {
+            pos,
+            size,
+        }
     }
     pub fn flatten(self) -> Rect3 {
         Rect3::new(self.pos, self.size.drop_z())

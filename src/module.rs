@@ -14,7 +14,9 @@ impl<M: mf::Module> TestModule<M> {
     pub fn new(ifc: Arc<mf::Interface<M>>) -> TestModule<M> {
         ifc.add_port(&mf::MetaPort::new::<u8, _>("TestPort1"));
         ifc.add_port(&mf::MetaPort::new::<u8, _>("TestPort2"));
-        TestModule { ifc }
+        TestModule {
+            ifc,
+        }
     }
 }
 impl<M: mf::Module> Module for TestModule<M> {

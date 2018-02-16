@@ -1,2 +1,5 @@
 max_width = 110
 comment_width = 110
+
+# more annoying to add fields when they are on a single line
+struct_lit_single_line = false

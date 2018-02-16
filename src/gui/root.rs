@@ -7,11 +7,13 @@ use super::component::*;
 use super::event::*;
 use super::module_gui::*;
 use super::menu::*;
+use super::connect::*;
 
 use modular_flow as mf;
 use gfx_device_gl as gl;
 
 use std::sync::Arc;
+use std::rc::Rc;
 use std::cell::{RefCell, RefMut};
 use std::cmp::Ordering;
 
@@ -23,8 +25,12 @@ impl OwnedModule {
         self.value.borrow_mut()
     }
 }
+pub struct ModuleArgs {
+    pub bounds: Box3,
+    pub jack_ctx: Rc<JackContext>,
+}
 impl mf::Module for OwnedModule {
-    type Arg = Box3;
+    type Arg = ModuleArgs;
 }
 type Graph = mf::Graph<OwnedModule>;
 type Node = mf::Node<OwnedModule>;
@@ -36,6 +42,7 @@ pub struct Root {
     ctx: RenderContext,
     module_types: Vec<mf::MetaModule<OwnedModule>>,
     context_menu: Option<MenuView>,
+    jack_ctx: Rc<JackContext>,
 }
 
 impl Root {
@@ -45,6 +52,8 @@ impl Root {
             bounds,
             module_types: load_metamodules(ctx.clone()),
             context_menu: None,
+            jack_ctx: JackContext::new(bounds),
+
             ctx,
         }
     }
@@ -52,7 +61,13 @@ impl Root {
     fn new_module(&self, meta: &mf::MetaModule<OwnedModule>, rect: Rect2) {
         // dummy z, overwritten by move_to_front
         let bounds = Box3::new(rect.pos.with_z(0.0), rect.size.with_z(0.0));
-        let node = self.graph.add_node(meta, bounds);
+        let node = self.graph.add_node(
+            meta,
+            ModuleArgs {
+                bounds,
+                jack_ctx: self.jack_ctx.clone(),
+            },
+        );
         self.move_to_front(node.id());
     }
 
@@ -121,6 +136,9 @@ impl GuiComponent for Root {
         if let Some(menu) = self.context_menu.as_mut() {
             menu.render(device, ctx);
         }
+
+        // render wires
+        self.jack_ctx.render(device, ctx);
     }
     fn handle(&mut self, event: &Event) {
         match event.data {
@@ -200,11 +218,11 @@ fn load_metamodules(ctx: RenderContext) -> Vec<mf::MetaModule<OwnedModule>> {
     let mod_ctx = ctx;
     let test_module = mf::MetaModule::new(
         "TestModule",
-        Arc::new(move |ifc, bounds| OwnedModule {
+        Arc::new(move |ifc, args| OwnedModule {
             value: RefCell::new(Box::new(GuiModuleWrapper::new(
                 TestModule::new(ifc),
                 mod_ctx.clone(),
-                bounds,
+                args,
             )) as Box<GuiComponent<GuiModuleUpdate>>),
         }),
     );

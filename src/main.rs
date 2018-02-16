@@ -8,10 +8,10 @@
 #![feature(generators)]
 #![feature(generator_trait)]
 #![feature(match_default_bindings)]
-#![feature(use_nested_groups)]
 #![feature(libc)]
 #![feature(drain_filter)]
 #![feature(nll)]
+#![feature(arbitrary_self_types)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 

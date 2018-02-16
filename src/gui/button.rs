@@ -94,7 +94,8 @@ impl GuiComponent<ButtonUpdate> for Button {
                 }
             }
             EventData::Click(pos, button, state)
-                if event.focus && button == MouseButton::Left && state == ButtonState::Pressed && self.hover =>
+                if event.focus && button == MouseButton::Left && state == ButtonState::Pressed
+                    && self.hover =>
             {
                 self.clicking = true;
                 ButtonUpdate::NeedRender

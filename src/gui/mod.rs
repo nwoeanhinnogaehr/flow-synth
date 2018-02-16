@@ -6,6 +6,7 @@ mod component;
 mod event;
 mod module_gui;
 mod root;
+mod connect;
 
 use self::render::*;
 use self::geom::*;
