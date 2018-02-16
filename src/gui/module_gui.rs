@@ -144,7 +144,6 @@ where
         let origin = self.bounds.pos.drop_z();
         for jack in &mut self.jacks {
             jack.handle(&event.translate(-origin));
-            self.dirty = true;
         }
         match event.data {
             EventData::MouseMove(pos) => {
