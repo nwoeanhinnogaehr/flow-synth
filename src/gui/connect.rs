@@ -14,6 +14,7 @@ use std::sync::Arc;
 pub trait JackBackend {
     fn label(&self) -> &str;
     fn connect(&self, other: &Self);
+    fn disconnect(&self);
 }
 
 impl JackBackend for Arc<mf::Port> {
@@ -21,7 +22,10 @@ impl JackBackend for Arc<mf::Port> {
         self.meta().name()
     }
     fn connect(&self, other: &Self) {
-        mf::Port::connect(self, other);
+        mf::Port::connect(self, other).unwrap();
+    }
+    fn disconnect(&self) {
+        mf::Port::disconnect(self).unwrap();
     }
 }
 
@@ -138,27 +142,41 @@ impl<T: JackBackend> GuiComponent for Rc<Jack<T>> {
                         .expect("no events expected during shutdown");
                     let mut in_progress = ctx.in_progress.borrow_mut();
                     let mut connection = self.connection.borrow_mut();
-                    if let Some(ref mut weak_in_progress) = in_progress.take() {
-                        if let Some(ref mut endpoint) = weak_in_progress.upgrade() {
-                            if !Rc::ptr_eq(endpoint, self) {
-                                // connection in progress:
-                                // click establishes new connection
-                                connection.disconnect();
-                                *connection = Connection::Tail {
-                                    endpoint: weak_in_progress.clone(),
-                                };
-                                *endpoint.connection.borrow_mut() = Connection::Head {
-                                    endpoint: Rc::downgrade(self),
-                                };
-                                // signal to backend
-                                self.backend.connect(&endpoint.backend);
-                            } else {
-                                // replace in_progress (taken above) if we decide to bail out
-                                *in_progress = Some(weak_in_progress.clone());
+                    if let Some((ref mut weak_in_progress, ref mut endpoint)) = in_progress
+                        .take()
+                        .and_then(|wip| wip.upgrade().map(|ep| (wip, ep)))
+                    {
+                        if !Rc::ptr_eq(endpoint, self) {
+                            // connection in progress:
+                            // click establishes new connection
+
+                            // signal disconnect to backend
+                            if connection.is_connected() {
+                                self.backend.disconnect();
                             }
+                            // update model
+                            connection.disconnect();
+                            *connection = Connection::Tail {
+                                endpoint: weak_in_progress.clone(),
+                            };
+                            *endpoint.connection.borrow_mut() = Connection::Head {
+                                endpoint: Rc::downgrade(self),
+                            };
+                            // signal connect to backend
+                            self.backend.connect(&endpoint.backend);
+                        } else {
+                            // replace in_progress (taken above) if we decide to bail out
+                            *in_progress = Some(weak_in_progress.clone());
                         }
                     } else {
+                        // no connection in progress:
                         // begin connecting
+
+                        // signal disconnect to backend
+                        if connection.is_connected() {
+                            self.backend.disconnect();
+                        }
+                        // update model
                         connection.disconnect();
                         *connection = Connection::Floating {
                             pos: pos + self.origin().drop_z(),
