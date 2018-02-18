@@ -7,7 +7,10 @@ use super::event::*;
 use super::root::ModuleArgs;
 use super::connect::*;
 
+use modular_flow as mf;
+
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gfx_device_gl as gl;
 
@@ -20,7 +23,7 @@ pub struct GuiModuleWrapper<T: Module> {
     target: TextureTarget,
 
     delete_button: Button,
-    jacks: Vec<Rc<Jack>>,
+    jacks: Vec<Rc<Jack<Arc<mf::Port>>>>,
     bounds: Box3,
     drag: Option<Pt2>,
     dirty: bool,
@@ -40,7 +43,7 @@ impl<T: Module> GuiModuleWrapper<T> {
                 let size = Pt3::new(bounds.size.x, 20.0, 0.1);
                 let jack_bounds = Box3::new(pos, size);
                 args.jack_ctx
-                    .new_jack(port.meta().name().into(), jack_bounds, bounds.pos)
+                    .new_jack(port.clone(), jack_bounds, bounds.pos)
             })
             .collect();
 

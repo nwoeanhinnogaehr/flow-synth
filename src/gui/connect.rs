@@ -3,40 +3,57 @@ use super::component::*;
 use super::event::*;
 use super::render::*;
 
+use modular_flow as mf;
+
 use gfx_device_gl as gl;
 
 use std::rc::{Rc, Weak};
 use std::cell::{Cell, RefCell};
+use std::sync::Arc;
+
+pub trait JackBackend {
+    fn label(&self) -> &str;
+    fn connect(&self, other: &Self);
+}
+
+impl JackBackend for Arc<mf::Port> {
+    fn label(&self) -> &str {
+        self.meta().name()
+    }
+    fn connect(&self, other: &Self) {
+        mf::Port::connect(self, other);
+    }
+}
 
 /// Jacks are GUI connection points
 /// wires (pipes) can connect jacks
-pub struct Jack {
-    jack_ctx: Weak<JackContext>,
-    label: String,
+pub struct Jack<T: JackBackend> {
+    jack_ctx: Weak<JackContext<T>>,
+    backend: T,
     bounds: Cell<Box3>,
     origin: Cell<Pt3>,
-    connection: RefCell<Connection>,
+    connection: RefCell<Connection<T>>,
 }
 
-enum Connection {
+enum Connection<T: JackBackend> {
     None,
     /// head/tail distinction is so that only one endpoint draws the wire
     Head {
-        endpoint: Weak<Jack>,
+        endpoint: Weak<Jack<T>>,
     },
     Tail {
-        endpoint: Weak<Jack>,
+        endpoint: Weak<Jack<T>>,
     },
     /// floating is a connection in process
     Floating {
         pos: Pt2,
     },
 }
-impl Connection {
+impl<T: JackBackend> Connection<T> {
     fn is_connected(&self) -> bool {
         self.endpoint().is_some()
     }
-    fn endpoint(&self) -> Option<Rc<Jack>> {
+    fn endpoint(&self) -> Option<Rc<Jack<T>>> {
         match self {
             Connection::Head {
                 endpoint,
@@ -56,18 +73,15 @@ impl Connection {
     }
 }
 
-impl Jack {
-    fn new(jack_ctx: &Rc<JackContext>, label: String, bounds: Box3, origin: Pt3) -> Jack {
+impl<T: JackBackend> Jack<T> {
+    fn new(jack_ctx: &Rc<JackContext<T>>, backend: T, bounds: Box3, origin: Pt3) -> Jack<T> {
         Jack {
             jack_ctx: Rc::downgrade(jack_ctx),
-            label,
+            backend,
             bounds: Cell::new(bounds),
             origin: Cell::new(origin),
             connection: RefCell::new(Connection::None),
         }
-    }
-    pub fn label(&self) -> &str {
-        &self.label
     }
     pub fn origin(&self) -> Pt3 {
         self.origin.get()
@@ -79,7 +93,7 @@ impl Jack {
         self.bounds.get().pos + self.bounds.get().size.y / 2.0 + self.origin()
     }
 }
-impl GuiComponent for Rc<Jack> {
+impl<T: JackBackend> GuiComponent for Rc<Jack<T>> {
     fn set_bounds(&mut self, bounds: Box3) {
         self.bounds.set(bounds);
     }
@@ -108,7 +122,7 @@ impl GuiComponent for Rc<Jack> {
             [0.0, 0.0, 0.5],
         );
         ctx.draw_text(
-            self.label(),
+            self.backend.label(),
             self.bounds().pos + Pt3::new(20.0, 0.0, 0.0),
             [1.0, 1.0, 1.0],
         );
@@ -136,6 +150,8 @@ impl GuiComponent for Rc<Jack> {
                                 *endpoint.connection.borrow_mut() = Connection::Head {
                                     endpoint: Rc::downgrade(self),
                                 };
+                                // signal to backend
+                                self.backend.connect(&endpoint.backend);
                             } else {
                                 // replace in_progress (taken above) if we decide to bail out
                                 *in_progress = Some(weak_in_progress.clone());
@@ -166,22 +182,22 @@ impl GuiComponent for Rc<Jack> {
 /// a Jack is unaware of other nearby jacks it can connect to
 /// so the JackContext manages establishment of connections between jacks
 /// (within a specific context)
-pub struct JackContext {
+pub struct JackContext<T: JackBackend> {
     bounds: Cell<Box3>,
-    jacks: RefCell<Vec<Weak<Jack>>>,
-    in_progress: RefCell<Option<Weak<Jack>>>,
+    jacks: RefCell<Vec<Weak<Jack<T>>>>,
+    in_progress: RefCell<Option<Weak<Jack<T>>>>,
 }
 
-impl JackContext {
-    pub fn new(bounds: Box3) -> Rc<JackContext> {
+impl<T: JackBackend> JackContext<T> {
+    pub fn new(bounds: Box3) -> Rc<JackContext<T>> {
         Rc::new(JackContext {
             bounds: Cell::new(bounds),
             jacks: RefCell::new(Vec::new()),
             in_progress: RefCell::new(None),
         })
     }
-    pub fn new_jack(self: &Rc<JackContext>, label: String, bounds: Box3, origin: Pt3) -> Rc<Jack> {
-        let jack = Rc::new(Jack::new(&self, label, bounds, origin));
+    pub fn new_jack(self: &Rc<JackContext<T>>, backend: T, bounds: Box3, origin: Pt3) -> Rc<Jack<T>> {
+        let jack = Rc::new(Jack::new(&self, backend, bounds, origin));
         let mut jacks = self.jacks.borrow_mut();
         weak_cleanup(&mut jacks);
         jacks.push(Rc::downgrade(&jack));
@@ -195,7 +211,7 @@ fn weak_cleanup<T>(vec: &mut Vec<Weak<T>>) {
 }
 
 /// the wires fill space outside of the modules, so they are rendered by the context
-impl GuiComponent for Rc<JackContext> {
+impl<T: JackBackend> GuiComponent for Rc<JackContext<T>> {
     fn set_bounds(&mut self, bounds: Box3) {
         self.bounds.set(bounds);
     }

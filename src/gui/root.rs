@@ -27,7 +27,7 @@ impl OwnedModule {
 }
 pub struct ModuleArgs {
     pub bounds: Box3,
-    pub jack_ctx: Rc<JackContext>,
+    pub jack_ctx: Rc<JackContext<Arc<mf::Port>>>,
 }
 impl mf::Module for OwnedModule {
     type Arg = ModuleArgs;
@@ -42,7 +42,7 @@ pub struct Root {
     ctx: RenderContext,
     module_types: Vec<mf::MetaModule<OwnedModule>>,
     context_menu: Option<MenuView>,
-    jack_ctx: Rc<JackContext>,
+    jack_ctx: Rc<JackContext<Arc<mf::Port>>>,
 }
 
 impl Root {
