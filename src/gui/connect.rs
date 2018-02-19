@@ -143,7 +143,7 @@ impl<T: JackBackend> GuiComponent for Rc<Jack<T>> {
                     let mut in_progress = ctx.in_progress.borrow_mut();
                     let mut connection = self.connection.borrow_mut();
                     if let Some((ref mut weak_in_progress, ref mut endpoint)) = in_progress
-                        .take()
+                        .as_mut()
                         .and_then(|wip| wip.upgrade().map(|ep| (wip, ep)))
                     {
                         if !Rc::ptr_eq(endpoint, self) {
@@ -162,11 +162,9 @@ impl<T: JackBackend> GuiComponent for Rc<Jack<T>> {
                             *endpoint.connection.borrow_mut() = Connection::Head {
                                 endpoint: Rc::downgrade(self),
                             };
+                            *in_progress = None;
                             // signal connect to backend
                             self.backend.connect(&endpoint.backend);
-                        } else {
-                            // replace in_progress (taken above) if we decide to bail out
-                            *in_progress = Some(weak_in_progress.clone());
                         }
                     } else {
                         // no connection in progress:
