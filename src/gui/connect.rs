@@ -94,7 +94,8 @@ impl<T: JackBackend> Jack<T> {
         self.origin.set(origin);
     }
     pub fn connection_point(&self) -> Pt3 {
-        self.bounds.get().pos + self.bounds.get().size.y / 2.0 + self.origin()
+        self.bounds.get().pos.with_z(0.0) + Pt2::from(self.bounds.get().size.y / 2.0).with_z(0.0)
+            + self.origin()
     }
 }
 impl<T: JackBackend> GuiComponent for Rc<Jack<T>> {
@@ -246,19 +247,16 @@ impl<T: JackBackend> GuiComponent for Rc<JackContext<T>> {
                         ref endpoint,
                     } => {
                         if let Some(endpoint) = endpoint.upgrade() {
-                            ctx.draw_pipe(&[
-                                jack.connection_point().drop_z().with_z(0.0),
-                                endpoint.connection_point().drop_z().with_z(0.0),
-                            ]);
+                            let a = jack.connection_point();
+                            let b = endpoint.connection_point();
+                            let min_z = a.z.min(b.z);
+                            ctx.draw_pipe(&[a.with_z(min_z), b.with_z(min_z)]);
                         }
                     }
                     Connection::Floating {
                         pos,
                     } => {
-                        ctx.draw_pipe(&[
-                            jack.connection_point().drop_z().with_z(0.0),
-                            pos.with_z(0.0),
-                        ]);
+                        ctx.draw_pipe(&[jack.connection_point().with_z(0.0), pos.with_z(0.0)]);
                     }
                     _ => {}
                 }

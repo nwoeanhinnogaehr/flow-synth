@@ -73,10 +73,12 @@ impl<T: Copy + One + Zero + Add + 'static> Module for Counter<T> {
                     if let Ok(n) = ifc.read_n::<usize>(&port, 1) {
                         ifc.write::<T, _>(
                             &port,
-                            (0..n[0]).map(|i| {
-                                count = count + T::one();
-                                count
-                            }).collect::<Vec<_>>(),
+                            (0..n[0])
+                                .map(|i| {
+                                    count = count + T::one();
+                                    count
+                                })
+                                .collect::<Vec<_>>(),
                         );
                     }
                 }

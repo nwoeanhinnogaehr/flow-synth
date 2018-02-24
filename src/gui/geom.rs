@@ -84,6 +84,9 @@ impl Pt3 {
     pub fn drop_z(self) -> Pt2 {
         Pt2::new(self.x, self.y)
     }
+    pub fn with_z(self, z: f32) -> Pt3 {
+        Pt3::new(self.x, self.y, z)
+    }
 }
 impl From<Pt3> for [f32; 3] {
     fn from(val: Pt3) -> [f32; 3] {

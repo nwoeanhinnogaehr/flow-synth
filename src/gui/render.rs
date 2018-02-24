@@ -382,6 +382,8 @@ impl RenderContext {
         &self.factory
     }
     pub fn end_frame(&mut self, device: &mut gl::Device, target: &Target) {
+        // XXX warning: draw order is still (somewhat) important.
+        // in particular we rely on pipes being last
         self.rects.draw(&mut self.encoder, target);
         self.textured_rects.draw(&mut self.encoder, target);
         self.texts.draw(&mut self.encoder, target);
@@ -407,8 +409,6 @@ impl Clone for RenderContext {
 
 pub struct TextureTarget {
     ctx: RenderContext,
-    //target_texture: Texture<gl::Resources, gfx::format::R8_G8_B8_A8>,
-    //depth_texture: Texture<gl::Resources, gfx::format::D24_S8>,
     target_resource: ShaderResourceView<gl::Resources, [f32; 4]>,
     target: Target,
     size: Pt2,
