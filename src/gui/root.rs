@@ -198,9 +198,8 @@ impl GuiComponent for Root {
 }
 
 fn load_metamodules() -> Vec<Box<GuiModuleFactory>> {
-    let mut modules: Vec<Box<GuiModuleFactory>> = Vec::new();
-    modules.push(Box::new(BasicGuiModuleFactory::new("TestModule", |cfg| {
-        Box::new(GuiModuleWrapper::<TestModule>::new(cfg))
-    })));
-    modules
+    vec![
+        Box::new(BasicGuiModuleFactory::<Printer<i32>>::new()),
+        Box::new(BasicGuiModuleFactory::<Counter<i32>>::new()),
+    ]
 }

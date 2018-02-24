@@ -10,6 +10,7 @@ use modular_flow as mf;
 
 use std::rc::Rc;
 use std::sync::Arc;
+use std::marker::PhantomData;
 
 use gfx_device_gl as gl;
 
@@ -24,29 +25,23 @@ pub trait GuiModuleFactory {
     fn new(&mut self, arg: GuiModuleConfig) -> Box<GuiModule>;
 }
 
-pub struct BasicGuiModuleFactory<F: FnMut(GuiModuleConfig) -> Box<GuiModule>> {
-    name: &'static str,
-    new_fn: F,
+#[derive(Default)]
+pub struct BasicGuiModuleFactory<T: Module + 'static> {
+    _t: PhantomData<T>,
 }
-
-impl<F: FnMut(GuiModuleConfig) -> Box<GuiModule>> BasicGuiModuleFactory<F> {
-    pub fn new(name: &'static str, new_fn: F) -> BasicGuiModuleFactory<F> {
+impl<T: Module + 'static> BasicGuiModuleFactory<T> {
+    pub fn new() -> BasicGuiModuleFactory<T> {
         BasicGuiModuleFactory {
-            name,
-            new_fn,
+            _t: PhantomData,
         }
     }
 }
-
-impl<F> GuiModuleFactory for BasicGuiModuleFactory<F>
-where
-    F: FnMut(GuiModuleConfig) -> Box<GuiModule>,
-{
+impl<T: Module + 'static> GuiModuleFactory for BasicGuiModuleFactory<T> {
     fn name(&self) -> &str {
-        self.name
+        T::name()
     }
-    fn new(&mut self, arg: GuiModuleConfig) -> Box<GuiModule> {
-        (self.new_fn)(arg)
+    fn new(&mut self, cfg: GuiModuleConfig) -> Box<GuiModule> {
+        Box::new(GuiModuleWrapper::<T>::new(cfg))
     }
 }
 
@@ -141,7 +136,7 @@ impl<T: Module> GuiModuleWrapper<T> {
             ),
             [0.0, 0.0, 0.0],
         );
-        let title = &self.module.title();
+        let title = T::name();
         self.target
             .ctx()
             .draw_text(title, Pt3::new(4.0, 4.0, 0.8), [1.0, 1.0, 1.0]);

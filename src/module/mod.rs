@@ -7,7 +7,9 @@ pub trait Module {
     fn new(ifc: Arc<mf::Interface>) -> Self
     where
         Self: Sized;
+    fn name() -> &'static str
+    where
+        Self: Sized;
     fn start(&mut self);
-    fn title(&self) -> String;
     fn ports(&self) -> Vec<Arc<mf::Port>>;
 }
