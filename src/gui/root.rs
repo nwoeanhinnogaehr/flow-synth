@@ -2,7 +2,7 @@
 
 use super::geom::*;
 use super::render::*;
-use super::super::module::*;
+use super::super::module::debug::*;
 use super::component::*;
 use super::event::*;
 use super::module_gui::*;
@@ -14,33 +14,15 @@ use gfx_device_gl as gl;
 
 use std::sync::Arc;
 use std::rc::Rc;
-use std::cell::{RefCell, RefMut};
 use std::cmp::Ordering;
 
-struct OwnedModule {
-    value: RefCell<Box<GuiComponent<GuiModuleUpdate>>>,
-}
-impl OwnedModule {
-    pub fn get(&self) -> RefMut<Box<GuiComponent<GuiModuleUpdate>>> {
-        self.value.borrow_mut()
-    }
-}
-pub struct ModuleArgs {
-    pub bounds: Box3,
-    pub jack_ctx: Rc<JackContext<Arc<mf::Port>>>,
-}
-impl mf::Module for OwnedModule {
-    type Arg = ModuleArgs;
-}
-type Graph = mf::Graph<OwnedModule>;
-type Node = mf::Node<OwnedModule>;
-
 pub struct Root {
-    graph: Arc<Graph>,
+    graph: Arc<mf::Graph>,
     bounds: Box3,
 
     ctx: RenderContext,
-    module_types: Vec<mf::MetaModule<OwnedModule>>,
+    modules: Vec<Box<GuiModule>>,
+    module_types: Vec<Box<GuiModuleFactory>>,
     context_menu: Option<MenuView>,
     jack_ctx: Rc<JackContext<Arc<mf::Port>>>,
 }
@@ -48,9 +30,10 @@ pub struct Root {
 impl Root {
     pub fn new(ctx: RenderContext, bounds: Box3) -> Root {
         Root {
-            graph: Graph::new(),
+            graph: mf::Graph::new(),
             bounds,
-            module_types: load_metamodules(ctx.clone()),
+            modules: Vec::new(),
+            module_types: load_metamodules(),
             context_menu: None,
             jack_ctx: JackContext::new(bounds),
 
@@ -58,17 +41,23 @@ impl Root {
         }
     }
 
-    fn new_module(&self, meta: &mf::MetaModule<OwnedModule>, rect: Rect2) {
+    fn new_module(&mut self, name: &str, rect: Rect2) -> Result<mf::NodeId, ()> {
         // dummy z, overwritten by move_to_front
-        let bounds = Box3::new(rect.pos.with_z(0.0), rect.size.with_z(0.0));
-        let node = self.graph.add_node(
-            meta,
-            ModuleArgs {
+        if let Some(factory) = self.module_types.iter_mut().find(|ty| ty.name() == name) {
+            let bounds = Box3::new(rect.pos.with_z(0.0), rect.size.with_z(0.0));
+            let module = factory.new(GuiModuleConfig {
                 bounds,
-                jack_ctx: self.jack_ctx.clone(),
-            },
-        );
-        self.move_to_front(node.id());
+                jack_ctx: Rc::clone(&self.jack_ctx),
+                graph: Arc::clone(&self.graph),
+                ctx: self.ctx.clone(),
+            });
+            let id = module.node().id();
+            self.modules.push(module);
+            self.move_to_front(id);
+            Ok(id)
+        } else {
+            Err(())
+        }
     }
 
     fn open_new_module_menu(&mut self, pos: Pt2) {
@@ -85,27 +74,25 @@ impl Root {
         ));
     }
 
-    fn compare_node_z(a: &Arc<Node>, b: &Arc<Node>) -> Ordering {
-        let a_z = a.module().get().bounds().pos.z;
-        let b_z = b.module().get().bounds().pos.z;
+    fn compare_node_z(a: &Box<GuiModule>, b: &Box<GuiModule>) -> Ordering {
+        let a_z = a.bounds().pos.z;
+        let b_z = b.bounds().pos.z;
         a_z.partial_cmp(&b_z).unwrap()
     }
 
-    fn move_to_front(&self, id: mf::NodeId) {
-        let mut nodes = self.graph.nodes();
-        nodes.sort_by(|a, b| {
+    fn move_to_front(&mut self, id: mf::NodeId) {
+        self.modules.sort_by(|a, b| {
             // force given id to front
-            if a.id() == id {
+            if a.node().id() == id {
                 Ordering::Less
-            } else if b.id() == id {
+            } else if b.node().id() == id {
                 Ordering::Greater
             } else {
                 Self::compare_node_z(a, b)
             }
         });
-        let max = nodes.len() as f32;
-        for (idx, node) in nodes.iter().enumerate() {
-            let mut module = node.module().get();
+        let max = self.modules.len() as f32;
+        for (idx, module) in self.modules.iter_mut().enumerate() {
             let mut bounds = module.bounds();
             bounds.pos.z = idx as f32 / max;
             bounds.size.z = 1.0 / max;
@@ -126,9 +113,7 @@ impl GuiComponent for Root {
     }
     fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext) {
         // render nodes
-        let graph_nodes = self.graph.node_map();
-        for (id, node) in &graph_nodes {
-            let mut module = node.module().get();
+        for module in &mut self.modules {
             module.render(device, ctx);
         }
 
@@ -155,11 +140,8 @@ impl GuiComponent for Root {
                         match status {
                             MenuUpdate::Select(path) => {
                                 let name: &str = path[0].as_ref();
-                                if let Some(module) = self.module_types.iter().find(|ty| ty.name() == name) {
-                                    self.new_module(module, Rect2::new(pos, 256.0.into()));
-                                } else {
-                                    println!("Couldn't find module {}", name);
-                                }
+                                self.new_module(name, Rect2::new(pos, 256.0.into()))
+                                    .unwrap();
                                 self.context_menu = None;
                             }
                             _ => (),
@@ -171,26 +153,28 @@ impl GuiComponent for Root {
                 }
 
                 // intersect nodes
-                let mut nodes = self.graph.nodes();
-                nodes.sort_by(Self::compare_node_z);
-                for node in &nodes {
-                    let mut module = node.module().get();
+                let mut hit_module = None;
+                for (idx, module) in self.modules.iter_mut().enumerate() {
                     if !hit && module.intersect(pos) {
                         hit = true;
-                        let status = module.handle(&event.with_focus(true));
-                        drop(module); // move_to_front will lock it again
-                        if let EventData::Click(_, _, _) = event.data {
-                            match status {
-                                GuiModuleUpdate::Closed => {
-                                    self.graph.remove_node(node.id()).unwrap();
-                                }
-                                _ => {}
-                            }
-                            self.move_to_front(node.id());
-                        }
+                        hit_module = Some(idx);
                     } else {
                         // assume unfocused events are boring
                         module.handle(&event.with_focus(false));
+                    }
+                }
+                if let Some(idx) = hit_module {
+                    let status = self.modules[idx].handle(&event.with_focus(true));
+                    if let EventData::Click(_, _, _) = event.data {
+                        match status {
+                            GuiModuleUpdate::Closed => {
+                                self.modules.remove(idx);
+                            }
+                            _ => {
+                                let id = self.modules[idx].node().id();
+                                self.move_to_front(id);
+                            }
+                        }
                     }
                 }
 
@@ -213,19 +197,10 @@ impl GuiComponent for Root {
     }
 }
 
-fn load_metamodules(ctx: RenderContext) -> Vec<mf::MetaModule<OwnedModule>> {
-    let mut modules = Vec::new();
-    let mod_ctx = ctx;
-    let test_module = mf::MetaModule::new(
-        "TestModule",
-        Arc::new(move |ifc, args| OwnedModule {
-            value: RefCell::new(Box::new(GuiModuleWrapper::new(
-                TestModule::new(ifc),
-                mod_ctx.clone(),
-                args,
-            )) as Box<GuiComponent<GuiModuleUpdate>>),
-        }),
-    );
-    modules.push(test_module);
+fn load_metamodules() -> Vec<Box<GuiModuleFactory>> {
+    let mut modules: Vec<Box<GuiModuleFactory>> = Vec::new();
+    modules.push(Box::new(BasicGuiModuleFactory::new("TestModule", |cfg| {
+        Box::new(GuiModuleWrapper::<TestModule>::new(cfg))
+    })));
     modules
 }

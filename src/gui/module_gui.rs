@@ -4,7 +4,6 @@ use super::super::module::*;
 use super::button::*;
 use super::component::*;
 use super::event::*;
-use super::root::ModuleArgs;
 use super::connect::*;
 
 use modular_flow as mf;
@@ -14,11 +13,53 @@ use std::sync::Arc;
 
 use gfx_device_gl as gl;
 
+pub struct GuiModuleConfig {
+    pub graph: Arc<mf::Graph>,
+    pub ctx: RenderContext,
+    pub bounds: Box3,
+    pub jack_ctx: Rc<JackContext<Arc<mf::Port>>>,
+}
+pub trait GuiModuleFactory {
+    fn name(&self) -> &str;
+    fn new(&mut self, arg: GuiModuleConfig) -> Box<GuiModule>;
+}
+
+pub struct BasicGuiModuleFactory<F: FnMut(GuiModuleConfig) -> Box<GuiModule>> {
+    name: &'static str,
+    new_fn: F,
+}
+
+impl<F: FnMut(GuiModuleConfig) -> Box<GuiModule>> BasicGuiModuleFactory<F> {
+    pub fn new(name: &'static str, new_fn: F) -> BasicGuiModuleFactory<F> {
+        BasicGuiModuleFactory {
+            name,
+            new_fn,
+        }
+    }
+}
+
+impl<F> GuiModuleFactory for BasicGuiModuleFactory<F>
+where
+    F: FnMut(GuiModuleConfig) -> Box<GuiModule>,
+{
+    fn name(&self) -> &str {
+        self.name
+    }
+    fn new(&mut self, arg: GuiModuleConfig) -> Box<GuiModule> {
+        (self.new_fn)(arg)
+    }
+}
+
+pub trait GuiModule: GuiComponent<GuiModuleUpdate> {
+    fn node(&self) -> Arc<mf::Node>;
+}
+
 const TITLE_BAR_HEIGHT: f32 = 24.0;
 const BORDER_SIZE: f32 = 1.0;
 
 pub struct GuiModuleWrapper<T: Module> {
     module: T,
+    node: Arc<mf::Node>,
 
     target: TextureTarget,
 
@@ -30,9 +71,17 @@ pub struct GuiModuleWrapper<T: Module> {
 }
 
 impl<T: Module> GuiModuleWrapper<T> {
-    pub fn new(module: T, ctx: RenderContext, args: ModuleArgs) -> GuiModuleWrapper<T> {
-        let bounds = args.bounds;
+    pub fn new(cfg: GuiModuleConfig) -> GuiModuleWrapper<T> {
+        let GuiModuleConfig {
+            bounds,
+            jack_ctx,
+            ctx,
+            graph,
+        } = cfg;
         let target = TextureTarget::new(ctx.clone(), bounds.size.drop_z());
+        let ifc = graph.add_node();
+        let node = graph.node(ifc.id()).unwrap();
+        let mut module = T::new(ifc);
 
         let jacks = module
             .ports()
@@ -42,13 +91,15 @@ impl<T: Module> GuiModuleWrapper<T> {
                 let pos = Pt3::new(4.0, 4.0 + TITLE_BAR_HEIGHT + idx as f32 * 20.0, 0.8);
                 let size = Pt3::new(bounds.size.x, 20.0, 0.1);
                 let jack_bounds = Box3::new(pos, size);
-                args.jack_ctx
-                    .new_jack(port.clone(), jack_bounds, bounds.pos)
+                jack_ctx.new_jack(port.clone(), jack_bounds, bounds.pos)
             })
             .collect();
 
+        module.start();
+
         GuiModuleWrapper {
             module,
+            node,
             target,
             delete_button: Button::new(
                 ctx,
@@ -108,6 +159,12 @@ impl<T: Module> GuiModuleWrapper<T> {
             ButtonUpdate::Clicked => GuiModuleUpdate::Closed,
             ButtonUpdate::Unchanged => GuiModuleUpdate::Unchanged,
         }
+    }
+}
+
+impl<T: Module> GuiModule for GuiModuleWrapper<T> {
+    fn node(&self) -> Arc<mf::Node> {
+        self.node.clone()
     }
 }
 
