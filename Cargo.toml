@@ -5,21 +5,8 @@ authors = ["Noah Weninger <nweninge@ualberta.ca>"]
 
 [dependencies]
 modular-flow = { path = "../modular-flow" }
-#rocket = "*"
-#rocket_codegen = "*"
-#rocket_contrib = "*"
-#rocket_cors = "*"
-#libloading = "*"
-#ws = "*"
-#serde_json = "*"
-#serde_derive = "*"
-#libc = "*"
 glutin = "*"
 gfx = "*"
 gfx_window_glutin = "*"
 gfx_text = { git = "https://github.com/PistonDevelopers/gfx_text" }
 gfx_device_gl = "*"
-
-[dependencies.serde]
-version = "*"
-features = ["rc"]
