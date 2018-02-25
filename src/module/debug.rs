@@ -1,5 +1,4 @@
-use super::Module;
-
+use module::Module;
 use modular_flow as mf;
 
 use num::{One, Zero};

@@ -21,10 +21,10 @@ extern crate gfx_device_gl;
 extern crate gfx_text;
 extern crate gfx_window_glutin;
 extern crate glutin;
-extern crate modular_flow;
 extern crate num;
 
 mod module;
+mod modular_flow;
 mod gui;
 
 fn main() {

@@ -1,15 +1,9 @@
 //! Root component that holds the application
 
-use super::geom::*;
-use super::render::*;
-use super::super::module::debug::*;
-use super::component::*;
-use super::event::*;
-use super::module_gui::*;
-use super::menu::*;
-use super::connect::*;
-
+use gui::{component::*, connect::*, event::*, geom::*, menu::*, module_gui::*, render::*};
+use module::debug::*;
 use modular_flow as mf;
+
 use gfx_device_gl as gl;
 
 use std::sync::Arc;

@@ -1,11 +1,5 @@
-use super::geom::*;
-use super::render::*;
-use super::super::module::*;
-use super::button::*;
-use super::component::*;
-use super::event::*;
-use super::connect::*;
-
+use gui::{button::*, component::*, connect::*, event::*, geom::*, render::*};
+use module::*;
 use modular_flow as mf;
 
 use std::rc::Rc;

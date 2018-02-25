@@ -1,8 +1,4 @@
-use super::RenderContext;
-use super::render::*;
-use super::geom::*;
-use super::component::*;
-use super::event::*;
+use gui::{RenderContext, component::*, event::*, geom::*, render::*};
 
 use gfx_device_gl as gl;
 

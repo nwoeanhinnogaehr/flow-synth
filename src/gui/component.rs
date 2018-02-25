@@ -6,9 +6,7 @@
 // - homogenous
 //
 
-use super::geom::*;
-use super::render::RenderContext;
-use super::event::Event;
+use gui::{event::Event, geom::*, render::RenderContext};
 
 use gfx_device_gl as gl;
 

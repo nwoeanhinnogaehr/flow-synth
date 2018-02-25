@@ -1,4 +1,4 @@
-use super::geom::*;
+use gui::geom::*;
 
 use std::sync::{Arc, Mutex};
 

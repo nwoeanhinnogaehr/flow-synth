@@ -1,4 +1,4 @@
-use super::geom::*;
+use gui::geom::*;
 
 use glutin;
 

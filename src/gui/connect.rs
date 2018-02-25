@@ -1,8 +1,4 @@
-use super::geom::*;
-use super::component::*;
-use super::event::*;
-use super::render::*;
-
+use gui::{component::*, event::*, geom::*, render::*};
 use modular_flow as mf;
 
 use gfx_device_gl as gl;
