@@ -72,6 +72,13 @@ impl<T: JackBackend> Connection<T> {
         }
     }
 }
+impl<T: JackBackend> Drop for Jack<T> {
+    fn drop(&mut self) {
+        if self.connection.borrow().is_connected() {
+            self.backend.disconnect();
+        }
+    }
+}
 
 impl<T: JackBackend> Jack<T> {
     fn new(jack_ctx: &Rc<JackContext<T>>, backend: T, bounds: Box3, origin: Pt3) -> Jack<T> {

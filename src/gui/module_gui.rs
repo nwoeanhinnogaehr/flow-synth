@@ -2,6 +2,8 @@ use gui::{button::*, component::*, connect::*, event::*, geom::*, render::*};
 use module::*;
 use modular_flow as mf;
 
+use futures::executor::ThreadPool;
+
 use std::rc::Rc;
 use std::sync::Arc;
 use std::marker::PhantomData;
@@ -13,6 +15,7 @@ pub struct GuiModuleConfig {
     pub ctx: RenderContext,
     pub bounds: Box3,
     pub jack_ctx: Rc<JackContext<Arc<mf::Port>>>,
+    pub executor: ThreadPool,
 }
 pub trait GuiModuleFactory {
     fn name(&self) -> &str;
@@ -46,8 +49,8 @@ pub trait GuiModule: GuiComponent<GuiModuleUpdate> {
 const TITLE_BAR_HEIGHT: f32 = 24.0;
 const BORDER_SIZE: f32 = 1.0;
 
-pub struct GuiModuleWrapper<T: Module> {
-    module: T,
+pub struct GuiModuleWrapper<T: Module + 'static> {
+    _t: PhantomData<T>,
     node: Arc<mf::Node>,
 
     target: TextureTarget,
@@ -59,13 +62,14 @@ pub struct GuiModuleWrapper<T: Module> {
     dirty: bool,
 }
 
-impl<T: Module> GuiModuleWrapper<T> {
+impl<T: Module + 'static> GuiModuleWrapper<T> {
     pub fn new(cfg: GuiModuleConfig) -> GuiModuleWrapper<T> {
         let GuiModuleConfig {
             bounds,
             jack_ctx,
             ctx,
             graph,
+            executor,
         } = cfg;
         let target = TextureTarget::new(ctx.clone(), bounds.size.drop_z());
         let ifc = graph.add_node();
@@ -84,10 +88,10 @@ impl<T: Module> GuiModuleWrapper<T> {
             })
             .collect();
 
-        module.start();
+        module.start(executor);
 
         GuiModuleWrapper {
-            module,
+            _t: PhantomData,
             node,
             target,
             delete_button: Button::new(

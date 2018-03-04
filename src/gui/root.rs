@@ -5,6 +5,7 @@ use module::debug::*;
 use modular_flow as mf;
 
 use gfx_device_gl as gl;
+use futures::executor::ThreadPool;
 
 use std::sync::Arc;
 use std::rc::Rc;
@@ -19,6 +20,7 @@ pub struct Root {
     module_types: Vec<Box<GuiModuleFactory>>,
     context_menu: Option<MenuView>,
     jack_ctx: Rc<JackContext<Arc<mf::Port>>>,
+    executor: ThreadPool,
 }
 
 impl Root {
@@ -30,6 +32,7 @@ impl Root {
             module_types: load_metamodules(),
             context_menu: None,
             jack_ctx: JackContext::new(bounds),
+            executor: ThreadPool::new(),
 
             ctx,
         }
@@ -44,6 +47,7 @@ impl Root {
                 jack_ctx: Rc::clone(&self.jack_ctx),
                 graph: Arc::clone(&self.graph),
                 ctx: self.ctx.clone(),
+                executor: self.executor.clone(),
             });
             let id = module.node().id();
             self.modules.push(module);

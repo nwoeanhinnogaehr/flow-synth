@@ -22,6 +22,8 @@ extern crate gfx_text;
 extern crate gfx_window_glutin;
 extern crate glutin;
 extern crate num;
+extern crate futures;
+extern crate crossbeam;
 
 mod module;
 mod modular_flow;

@@ -7,6 +7,8 @@ authors = ["Noah Weninger <nweninge@ualberta.ca>"]
 glutin = "*"
 gfx = "*"
 gfx_window_glutin = "*"
-gfx_text = { git = "https://github.com/PistonDevelopers/gfx_text" }
+gfx_text = "*"
 gfx_device_gl = "*"
 num = "*"
+futures = { git = "https://github.com/nwoeanhinnogaehr/futures-rs", branch = "WakerDerive" }
+crossbeam = "*"

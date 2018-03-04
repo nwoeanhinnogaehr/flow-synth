@@ -6,16 +6,23 @@
  * Max/MSP, but will probably have less focus on graphical programming. Modular live coding,
  * perhaps?
  *
- * This is iteration #2.
+ * This is iteration #3.
  */
 
-use std::sync::{Arc, Condvar, Mutex, RwLock, Weak};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use futures::prelude::*;
+use futures::task::Context;
+
+use crossbeam::sync::{AtomicOption, SegQueue};
+
+use std::cell::UnsafeCell;
+use std::sync::{Arc, RwLock, Weak};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::collections::{HashMap, VecDeque};
 use std::mem;
 use std::slice;
 use std::any::TypeId;
 use std::borrow::Cow;
+use std::marker::PhantomData;
 
 /// A lightweight persistent identifier for a node.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -146,27 +153,6 @@ impl Interface {
             .remove(&port)
             .ok_or(Error::InvalidPort)
     }
-
-    /// Wait (block) until a `Signal` is received on a port.
-    pub fn wait(&self, port: &Port) -> Signal {
-        port.wait()
-    }
-    /// Get a vector of all unread Signals on a port.
-    pub fn poll(&self, port: &Port) -> Vec<Signal> {
-        port.poll()
-    }
-    /// Write data to a port.
-    pub fn write<D: 'static>(&self, port: &Port, data: impl Into<Box<[D]>>) -> Result<(), Error> {
-        port.write(data.into())
-    }
-    /// Read all available data from a port.
-    pub fn read<D: 'static>(&self, port: &Port) -> Result<Box<[D]>, Error> {
-        port.read()
-    }
-    /// Read exactly `n` values from a port.
-    pub fn read_n<D: 'static>(&self, port: &Port, n: usize) -> Result<Box<[D]>, Error> {
-        port.read_n(n)
-    }
 }
 
 /// Port metadata.
@@ -204,21 +190,28 @@ impl MetaPort {
 pub struct Port {
     meta: MetaPort,
     id: PortId,
-    buffer: Mutex<VecDeque<u8>>,
+    buf_lock: AtomicBool,
+    buf_lock_q: SegQueue<task::Waker>,
+    buffer: UnsafeCell<VecDeque<u8>>,
+    reader_buf: AtomicOption<task::Waker>,
     edge: RwLock<Option<Weak<Port>>>,
-    signal: Mutex<VecDeque<Signal>>,
-    cvar: Condvar,
+    disconnect_occured: AtomicBool,
 }
+
+unsafe impl Send for Port {}
+unsafe impl Sync for Port {}
 
 impl Port {
     fn new(graph: &Graph, meta: &MetaPort) -> Arc<Port> {
         Arc::new(Port {
             meta: MetaPort::clone(meta),
             id: PortId(graph.generate_id()),
-            buffer: Mutex::new(VecDeque::new()),
+            buf_lock: AtomicBool::new(false),
+            buf_lock_q: SegQueue::new(),
+            buffer: UnsafeCell::new(VecDeque::new()),
+            reader_buf: AtomicOption::new(),
             edge: RwLock::new(None),
-            signal: Mutex::new(VecDeque::new()),
-            cvar: Condvar::new(),
+            disconnect_occured: AtomicBool::new(false),
         })
     }
 
@@ -257,8 +250,6 @@ impl Port {
             }
             *a_edge = Some(Arc::downgrade(b));
             *b_edge = Some(Arc::downgrade(a));
-            a.signal(Signal::Connect);
-            b.signal(Signal::Connect);
             Ok(())
         }
     }
@@ -304,9 +295,23 @@ impl Port {
                 ));
                 *self_edge = None;
                 *other_edge = None;
-                self.signal(Signal::Disconnect);
-                other.signal(Signal::Disconnect);
-                break Ok(());
+
+                // fail any waiting readers so that the task isn't left half finished across a
+                // disconnect/reconnect
+                self.disconnect_abort();
+                other.disconnect_abort();
+                break;
+            }
+        }
+        Ok(())
+    }
+    fn disconnect_abort(&self) {
+        loop {
+            if self.buf_lock.compare_and_swap(false, true, Ordering::Acquire) == false {
+                self.disconnect_occured.store(true, Ordering::SeqCst);
+                self.reader_buf.take(Ordering::SeqCst).map(|reader| reader.wake());
+                self.buf_lock.store(false, Ordering::Release);
+                break;
             }
         }
     }
@@ -314,49 +319,147 @@ impl Port {
     fn edge(&self) -> Option<Arc<Port>> {
         self.edge.read().unwrap().clone().and_then(|x| x.upgrade())
     }
-    fn signal(&self, signal: Signal) {
-        let mut lock = self.signal.lock().unwrap();
-        lock.push_back(signal);
-        self.cvar.notify_all();
-    }
-    fn poll(&self) -> Vec<Signal> {
-        let mut lock = self.signal.lock().unwrap();
-        let iter = lock.drain(..);
-        iter.collect()
-    }
-    fn wait(&self) -> Signal {
-        let mut lock = self.signal.lock().unwrap();
-        while lock.is_empty() {
-            lock = self.cvar.wait(lock).unwrap();
-        }
-        lock.pop_front().unwrap()
-    }
-    fn write<T: 'static>(&self, data: impl Into<Box<[T]>>) -> Result<(), Error> {
+    pub fn write<T: 'static>(self: &Arc<Port>, data: impl Into<Box<[T]>>) -> WriteFuture<T> {
         assert!(self.meta.out_ty == TypeId::of::<T>());
-        let bytes = typed_as_bytes(data.into());
-        let other = self.edge().ok_or(Error::NotConnected)?;
-        let mut buf = other.buffer.lock().unwrap();
-        buf.extend(bytes.into_iter());
-        other.signal(Signal::Write);
-        Ok(())
-    }
-    fn read<T: 'static>(&self) -> Result<Box<[T]>, Error> {
-        assert!(self.meta.in_ty == TypeId::of::<T>());
-        let mut buf = self.buffer.lock().unwrap();
-        let iter = buf.drain(..);
-        let out = iter.collect::<Vec<_>>().into();
-        Ok(bytes_as_typed(out))
-    }
-    fn read_n<T: 'static>(&self, n: usize) -> Result<Box<[T]>, Error> {
-        assert!(self.meta.in_ty == TypeId::of::<T>());
-        let mut buf = self.buffer.lock().unwrap();
-        let n = n * mem::size_of::<T>();
-        if n > buf.len() {
-            return Err(Error::NotAvailable);
+        WriteFuture {
+            _t: PhantomData,
+            port: self.clone(),
+            data: typed_as_bytes(data.into()),
         }
-        let iter = buf.drain(..n);
-        let out = iter.collect::<Vec<_>>().into();
-        Ok(bytes_as_typed(out))
+    }
+    pub fn read<T: 'static>(self: &Arc<Port>) -> impl Future<Item=Box<[T]>, Error=Error> {
+        assert!(self.meta.in_ty == TypeId::of::<T>());
+        ReadFuture {
+            _t: PhantomData,
+            port: self.clone(),
+            n: None,
+        }.fuse()
+    }
+    pub fn read_n<T: 'static>(self: &Arc<Port>, n: usize) -> impl Future<Item=Box<[T]>, Error=Error> {
+        assert!(self.meta.in_ty == TypeId::of::<T>());
+        ReadFuture {
+            _t: PhantomData,
+            port: self.clone(),
+            n: Some(n * mem::size_of::<T>()),
+        }.fuse()
+    }
+}
+
+pub struct ReadFuture<T: 'static> {
+    _t: PhantomData<T>,
+    port: Arc<Port>,
+    n: Option<usize>,
+}
+
+impl<T: 'static> Future for ReadFuture<T> {
+    type Item = Box<[T]>;
+    type Error = Error;
+    fn poll(&mut self, cx: &mut Context) -> Result<Async<Self::Item>, Self::Error> {
+        //println!("begin read");
+        // attempt to enter critical section of buffer
+        let mut data = None;
+        for try in 0..2 {
+            //println!("read try {}", try);
+            if self.port.buf_lock.compare_and_swap(false, true, Ordering::Acquire) == false {
+                if self.port.disconnect_occured.compare_and_swap(true, false, Ordering::SeqCst) {
+                    //println!("Err, disconnect");
+                    self.port.buf_lock.store(false, Ordering::Release);
+                    return Err(Error::Disconnected);
+                }
+                //println!("read locked");
+                let buf = unsafe { &mut *self.port.buffer.get() };
+                if self.n.map(|n| buf.len() < n).unwrap_or(buf.len() == 0) {
+                    // not enough data available
+                    // register to wake on next write
+                    if let Some(old_reader) = self.port.reader_buf.swap(cx.waker(), Ordering::SeqCst) {
+                        if cx.waker() != old_reader {
+                            // this might be supported in the future,
+                            // if you want multiple threads working on items from one port.
+                            // but it's probably better implemented at another level of
+                            // abstraction.
+                            panic!("multiple simultaneous reads from a port are not supported");
+                        }
+                    }
+                    data = None;
+                    //println!("read: not available");
+                } else {
+                    // move data out of queue
+                    let n = self.n.unwrap_or(buf.len());
+                    let iter = buf.drain(..n);
+                    data = Some(iter.collect::<Vec<_>>().into());
+                    //println!("read: done");
+                }
+                // leave critical section
+                self.port.buf_lock.store(false, Ordering::Release);
+                break;
+            } else {
+                //println!("read couldn't lock");
+                // couldn't lock buffer
+                // register this future to be notified upon critical section exit
+                if try == 0 {
+                    self.port.buf_lock_q.push(cx.waker());
+                } else {
+                    return Ok(Async::Pending);
+                }
+            }
+        }
+        //println!("read unlocked");
+
+        // wake a future that was waiting for the critical section, if any
+        self.port.buf_lock_q.try_pop().map(|x| x.wake());
+
+        if let Some(data) = data {
+            Ok(Async::Ready(bytes_as_typed(data)))
+        } else {
+            Ok(Async::Pending)
+        }
+    }
+}
+
+pub struct WriteFuture<T: 'static> {
+    _t: PhantomData<T>,
+    port: Arc<Port>,
+    data: Box<[u8]>,
+}
+
+impl<T: 'static> Future for WriteFuture<T> {
+    type Item = ();
+    type Error = Error;
+    fn poll(&mut self, cx: &mut Context) -> Result<Async<Self::Item>, Self::Error> {
+        //println!("begin write");
+        let other = self.port.edge().ok_or(Error::NotConnected)?;
+
+        for try in 0..2 {
+            //println!("write try {}", try);
+            // attempt to enter critical section of buffer
+            if other.buf_lock.compare_and_swap(false, true, Ordering::Acquire) == false {
+                //println!("write locked");
+                let buf = unsafe { &mut *other.buffer.get() };
+                buf.extend(self.data.into_iter());
+
+                // leave critical section
+                other.buf_lock.store(false, Ordering::Release);
+                break;
+            } else {
+                //println!("write couldn't lock");
+                // couldn't lock buffer
+                // register this future to be notified upon critical section exit
+                if try == 0 {
+                    other.buf_lock_q.push(cx.waker());
+                } else {
+                    return Ok(Async::Pending);
+                }
+            }
+        }
+        //println!("write unlocked");
+
+        // wake a future that was waiting for the critical section, if any
+        other.buf_lock_q.try_pop().map(|x| x.wake());
+
+        // wake any readers that are waiting for a write here
+        other.reader_buf.take(Ordering::SeqCst).map(|x| x.wake());
+
+        Ok(Async::Ready(()))
     }
 }
 
@@ -374,15 +477,7 @@ pub enum Error {
     InvalidNode,
     InvalidPort,
     NotAvailable,
-}
-
-/// Events occuring on a `Port`. Accessible via an `Interface`.
-#[derive(Debug, PartialEq, Eq)]
-pub enum Signal {
-    Abort,
-    Write,
-    Connect,
-    Disconnect,
+    Disconnected,
 }
 
 fn typed_as_bytes<T: 'static>(data: Box<[T]>) -> Box<[u8]> {
