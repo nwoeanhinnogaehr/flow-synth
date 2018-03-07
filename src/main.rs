@@ -15,6 +15,8 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+extern crate crossbeam;
+extern crate futures;
 #[macro_use]
 extern crate gfx;
 extern crate gfx_device_gl;
@@ -22,8 +24,6 @@ extern crate gfx_text;
 extern crate gfx_window_glutin;
 extern crate glutin;
 extern crate num;
-extern crate futures;
-extern crate crossbeam;
 
 mod module;
 mod modular_flow;

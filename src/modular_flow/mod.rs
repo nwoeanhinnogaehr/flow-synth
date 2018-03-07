@@ -15,7 +15,7 @@ use futures::task::Context;
 use crossbeam::sync::{AtomicOption, SegQueue};
 
 use std::cell::UnsafeCell;
-use std::sync::{Arc, RwLock, Mutex, Weak};
+use std::sync::{Arc, Mutex, RwLock, Weak};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::collections::{HashMap, VecDeque};
 use std::mem;
@@ -256,7 +256,10 @@ impl Port {
             // UnsafeCells protected by edge mutex
             let self_connect_wait = unsafe { &mut *self.connect_wait.get() };
             let other_connect_wait = unsafe { &mut *other.connect_wait.get() };
-            for waker in self_connect_wait.drain(..).chain(other_connect_wait.drain(..)) {
+            for waker in self_connect_wait
+                .drain(..)
+                .chain(other_connect_wait.drain(..))
+            {
                 waker.wake();
             }
             Ok(())
@@ -316,9 +319,13 @@ impl Port {
     }
     fn disconnect_abort(&self) {
         loop {
-            if self.buf_lock.compare_and_swap(false, true, Ordering::Acquire) == false {
+            if self.buf_lock
+                .compare_and_swap(false, true, Ordering::Acquire) == false
+            {
                 self.disconnect_occured.store(true, Ordering::SeqCst);
-                self.reader_buf.take(Ordering::SeqCst).map(|reader| reader.wake());
+                self.reader_buf
+                    .take(Ordering::SeqCst)
+                    .map(|reader| reader.wake());
                 self.buf_lock.store(false, Ordering::Release);
                 break;
             }
@@ -328,7 +335,10 @@ impl Port {
     fn edge(&self) -> Option<Arc<Port>> {
         self.edge.lock().unwrap().as_ref().and_then(|x| x.upgrade())
     }
-    pub fn write<T: 'static>(self: Arc<Port>, data: impl Into<Box<[T]>>) -> impl Future<Item=Arc<Port>, Error=(Arc<Port>, Error)> {
+    pub fn write<T: 'static>(
+        self: Arc<Port>,
+        data: impl Into<Box<[T]>>,
+    ) -> impl Future<Item = Arc<Port>, Error = (Arc<Port>, Error)> {
         assert!(self.meta.out_ty == TypeId::of::<T>());
         WriteFuture::<T> {
             _t: PhantomData,
@@ -336,7 +346,9 @@ impl Port {
             data: typed_as_bytes(data.into()),
         }.fuse()
     }
-    pub fn read<T: 'static>(self: Arc<Port>) -> impl Future<Item=(Arc<Port>, Box<[T]>), Error=(Arc<Port>, Error)> {
+    pub fn read<T: 'static>(
+        self: Arc<Port>,
+    ) -> impl Future<Item = (Arc<Port>, Box<[T]>), Error = (Arc<Port>, Error)> {
         assert!(self.meta.in_ty == TypeId::of::<T>());
         ReadFuture {
             _t: PhantomData,
@@ -344,7 +356,10 @@ impl Port {
             n: None,
         }.fuse()
     }
-    pub fn read_n<T: 'static>(self: Arc<Port>, n: usize) -> impl Future<Item=(Arc<Port>, Box<[T]>), Error=(Arc<Port>, Error)> {
+    pub fn read_n<T: 'static>(
+        self: Arc<Port>,
+        n: usize,
+    ) -> impl Future<Item = (Arc<Port>, Box<[T]>), Error = (Arc<Port>, Error)> {
         assert!(self.meta.in_ty == TypeId::of::<T>());
         ReadFuture {
             _t: PhantomData,
@@ -369,8 +384,14 @@ impl<T: 'static> Future for ReadFuture<T> {
         let mut data = None;
         for try in 0..2 {
             //println!("read try {}", try);
-            if self.port.buf_lock.compare_and_swap(false, true, Ordering::Acquire) == false {
-                if self.port.disconnect_occured.compare_and_swap(true, false, Ordering::SeqCst) {
+            if self.port
+                .buf_lock
+                .compare_and_swap(false, true, Ordering::Acquire) == false
+            {
+                if self.port
+                    .disconnect_occured
+                    .compare_and_swap(true, false, Ordering::SeqCst)
+                {
                     //println!("Err, disconnect");
                     self.port.buf_lock.store(false, Ordering::Release);
                     return Err((self.port.clone(), Error::Disconnected));
@@ -390,7 +411,7 @@ impl<T: 'static> Future for ReadFuture<T> {
                         }
                     }
                     data = None;
-                    //println!("read: not available");
+                //println!("read: not available");
                 } else {
                     // move data out of queue
                     let n = self.n.unwrap_or(buf.len());
@@ -437,7 +458,12 @@ impl<T: 'static> Future for WriteFuture<T> {
     fn poll(&mut self, cx: &mut Context) -> Result<Async<Self::Item>, Self::Error> {
         //println!("begin write");
         let other = {
-            let edge = self.port.edge.lock().unwrap().as_ref().and_then(|x| x.upgrade());
+            let edge = self.port
+                .edge
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|x| x.upgrade());
             match edge {
                 Some(other) => other,
                 None => {
@@ -445,14 +471,17 @@ impl<T: 'static> Future for WriteFuture<T> {
                     let connect_wait = unsafe { &mut *self.port.connect_wait.get() };
                     connect_wait.push(cx.waker());
                     return Ok(Async::Pending);
-                },
+                }
             }
         };
 
         for try in 0..2 {
             //println!("write try {}", try);
             // attempt to enter critical section of buffer
-            if other.buf_lock.compare_and_swap(false, true, Ordering::Acquire) == false {
+            if other
+                .buf_lock
+                .compare_and_swap(false, true, Ordering::Acquire) == false
+            {
                 //println!("write locked");
                 let buf = unsafe { &mut *other.buffer.get() };
                 buf.extend(self.data.into_iter());
