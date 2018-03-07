@@ -31,16 +31,17 @@ impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
     }
     fn start<Ex: executor::Executor>(&mut self, mut exec: Ex) {
         exec.spawn(Box::new(future::loop_fn(self.port.clone(), |port| {
-            let p2 = port.clone();
             port.write(vec![1_usize])
-            .and_then(move |_| p2.read_n(1))
-            .map(|input: Box<[T]>| println!("{:?}", input[0]))
-            .then(move |result| {
-                if let Err(e) = result {
-                    println!("result {:?}", e);
-                }
-                Ok(future::Loop::Continue(port))
+            .and_then(|port| port.read_n::<T>(1))
+            .map(|(port, input)| {
+                println!("{:?}", input[0]);
+                port
             })
+            .recover(|(port, err)| {
+                println!("PErr {:?}", err);
+                port
+            })
+            .map(|port| future::Loop::Continue(port))
         }))).unwrap();
     }
     fn ports(&self) -> Vec<Arc<mf::Port>> {
@@ -67,15 +68,13 @@ impl<T: Copy + One + Zero + Add + Send + 'static> Module for Counter<T> {
     }
     fn start<Ex: executor::Executor>(&mut self, mut exec: Ex) {
         exec.spawn(Box::new(future::loop_fn((T::zero(), self.port.clone()), |(count, port)| {
-            let p2 = port.clone();
-            port.read_n(1)
-            .and_then(move |x: Box<[usize]>| p2.write(vec![count]))
-            .then(move |result| {
-                if let Err(e) = result {
-                    println!("result {:?}", e);
-                }
-                Ok(future::Loop::Continue((count + T::one(), port)))
+            port.read_n::<usize>(1)
+            .and_then(move |(port, _)| port.write(vec![count]))
+            .recover(|(port, err)| {
+                println!("CErr {:?}", err);
+                port
             })
+            .map(move |port| future::Loop::Continue((count + T::one(), port)))
         }))).unwrap();
     }
     fn ports(&self) -> Vec<Arc<mf::Port>> {

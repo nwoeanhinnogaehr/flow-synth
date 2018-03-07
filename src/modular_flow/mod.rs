@@ -328,15 +328,15 @@ impl Port {
     fn edge(&self) -> Option<Arc<Port>> {
         self.edge.lock().unwrap().as_ref().and_then(|x| x.upgrade())
     }
-    pub fn write<T: 'static>(self: &Arc<Port>, data: impl Into<Box<[T]>>) -> WriteFuture<T> {
+    pub fn write<T: 'static>(self: Arc<Port>, data: impl Into<Box<[T]>>) -> impl Future<Item=Arc<Port>, Error=(Arc<Port>, Error)> {
         assert!(self.meta.out_ty == TypeId::of::<T>());
-        WriteFuture {
+        WriteFuture::<T> {
             _t: PhantomData,
             port: self.clone(),
             data: typed_as_bytes(data.into()),
-        }
+        }.fuse()
     }
-    pub fn read<T: 'static>(self: &Arc<Port>) -> impl Future<Item=Box<[T]>, Error=Error> {
+    pub fn read<T: 'static>(self: Arc<Port>) -> impl Future<Item=(Arc<Port>, Box<[T]>), Error=(Arc<Port>, Error)> {
         assert!(self.meta.in_ty == TypeId::of::<T>());
         ReadFuture {
             _t: PhantomData,
@@ -344,7 +344,7 @@ impl Port {
             n: None,
         }.fuse()
     }
-    pub fn read_n<T: 'static>(self: &Arc<Port>, n: usize) -> impl Future<Item=Box<[T]>, Error=Error> {
+    pub fn read_n<T: 'static>(self: Arc<Port>, n: usize) -> impl Future<Item=(Arc<Port>, Box<[T]>), Error=(Arc<Port>, Error)> {
         assert!(self.meta.in_ty == TypeId::of::<T>());
         ReadFuture {
             _t: PhantomData,
@@ -361,8 +361,8 @@ pub struct ReadFuture<T: 'static> {
 }
 
 impl<T: 'static> Future for ReadFuture<T> {
-    type Item = Box<[T]>;
-    type Error = Error;
+    type Item = (Arc<Port>, Box<[T]>);
+    type Error = (Arc<Port>, Error);
     fn poll(&mut self, cx: &mut Context) -> Result<Async<Self::Item>, Self::Error> {
         //println!("begin read");
         // attempt to enter critical section of buffer
@@ -373,7 +373,7 @@ impl<T: 'static> Future for ReadFuture<T> {
                 if self.port.disconnect_occured.compare_and_swap(true, false, Ordering::SeqCst) {
                     //println!("Err, disconnect");
                     self.port.buf_lock.store(false, Ordering::Release);
-                    return Err(Error::Disconnected);
+                    return Err((self.port.clone(), Error::Disconnected));
                 }
                 //println!("read locked");
                 let buf = unsafe { &mut *self.port.buffer.get() };
@@ -418,7 +418,7 @@ impl<T: 'static> Future for ReadFuture<T> {
         self.port.buf_lock_q.try_pop().map(|x| x.wake());
 
         if let Some(data) = data {
-            Ok(Async::Ready(bytes_as_typed(data)))
+            Ok(Async::Ready((self.port.clone(), bytes_as_typed(data))))
         } else {
             Ok(Async::Pending)
         }
@@ -432,8 +432,8 @@ pub struct WriteFuture<T: 'static> {
 }
 
 impl<T: 'static> Future for WriteFuture<T> {
-    type Item = ();
-    type Error = Error;
+    type Item = Arc<Port>;
+    type Error = (Arc<Port>, Error);
     fn poll(&mut self, cx: &mut Context) -> Result<Async<Self::Item>, Self::Error> {
         //println!("begin write");
         let other = {
@@ -479,7 +479,7 @@ impl<T: 'static> Future for WriteFuture<T> {
         // wake any readers that are waiting for a write here
         other.reader_buf.take(Ordering::SeqCst).map(|x| x.wake());
 
-        Ok(Async::Ready(()))
+        Ok(Async::Ready(self.port.clone()))
     }
 }
 
