@@ -15,7 +15,7 @@ use futures::task::Context;
 use crossbeam::sync::{AtomicOption, SegQueue};
 
 use std::cell::UnsafeCell;
-use std::sync::{Arc, RwLock, Weak};
+use std::sync::{Arc, RwLock, Mutex, Weak};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::collections::{HashMap, VecDeque};
 use std::mem;
@@ -194,7 +194,8 @@ pub struct Port {
     buf_lock_q: SegQueue<task::Waker>,
     buffer: UnsafeCell<VecDeque<u8>>,
     reader_buf: AtomicOption<task::Waker>,
-    edge: RwLock<Option<Weak<Port>>>,
+    connect_wait: UnsafeCell<Vec<task::Waker>>,
+    edge: Mutex<Option<Weak<Port>>>,
     disconnect_occured: AtomicBool,
 }
 
@@ -210,7 +211,8 @@ impl Port {
             buf_lock_q: SegQueue::new(),
             buffer: UnsafeCell::new(VecDeque::new()),
             reader_buf: AtomicOption::new(),
-            edge: RwLock::new(None),
+            connect_wait: UnsafeCell::new(Vec::new()),
+            edge: Mutex::new(None),
             disconnect_occured: AtomicBool::new(false),
         })
     }
@@ -241,8 +243,8 @@ impl Port {
             } else {
                 (other, self)
             };
-            let mut a_edge = a.edge.write().unwrap();
-            let mut b_edge = b.edge.write().unwrap();
+            let mut a_edge = a.edge.lock().unwrap();
+            let mut b_edge = b.edge.lock().unwrap();
             if a_edge.as_ref().and_then(|x| x.upgrade()).is_some()
                 || b_edge.as_ref().and_then(|x| x.upgrade()).is_some()
             {
@@ -250,6 +252,13 @@ impl Port {
             }
             *a_edge = Some(Arc::downgrade(b));
             *b_edge = Some(Arc::downgrade(a));
+
+            // UnsafeCells protected by edge mutex
+            let self_connect_wait = unsafe { &mut *self.connect_wait.get() };
+            let other_connect_wait = unsafe { &mut *other.connect_wait.get() };
+            for waker in self_connect_wait.drain(..).chain(other_connect_wait.drain(..)) {
+                waker.wake();
+            }
             Ok(())
         }
     }
@@ -272,11 +281,11 @@ impl Port {
             } else {
                 let (mut self_edge, mut other_edge);
                 if self.id().0 < other.id().0 {
-                    self_edge = self.edge.write().unwrap();
-                    other_edge = other.edge.write().unwrap();
+                    self_edge = self.edge.lock().unwrap();
+                    other_edge = other.edge.lock().unwrap();
                 } else {
-                    other_edge = other.edge.write().unwrap();
-                    self_edge = self.edge.write().unwrap();
+                    other_edge = other.edge.lock().unwrap();
+                    self_edge = self.edge.lock().unwrap();
                 };
                 // check that the port this one is connected to hasn't changed in between
                 // finding `other` and locking the edges
@@ -317,7 +326,7 @@ impl Port {
     }
 
     fn edge(&self) -> Option<Arc<Port>> {
-        self.edge.read().unwrap().clone().and_then(|x| x.upgrade())
+        self.edge.lock().unwrap().as_ref().and_then(|x| x.upgrade())
     }
     pub fn write<T: 'static>(self: &Arc<Port>, data: impl Into<Box<[T]>>) -> WriteFuture<T> {
         assert!(self.meta.out_ty == TypeId::of::<T>());
@@ -427,7 +436,18 @@ impl<T: 'static> Future for WriteFuture<T> {
     type Error = Error;
     fn poll(&mut self, cx: &mut Context) -> Result<Async<Self::Item>, Self::Error> {
         //println!("begin write");
-        let other = self.port.edge().ok_or(Error::NotConnected)?;
+        let other = {
+            let edge = self.port.edge.lock().unwrap().as_ref().and_then(|x| x.upgrade());
+            match edge {
+                Some(other) => other,
+                None => {
+                    // register to wake on connect
+                    let connect_wait = unsafe { &mut *self.port.connect_wait.get() };
+                    connect_wait.push(cx.waker());
+                    return Ok(Async::Pending);
+                },
+            }
+        };
 
         for try in 0..2 {
             //println!("write try {}", try);
