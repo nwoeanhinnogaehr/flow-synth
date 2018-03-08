@@ -333,13 +333,15 @@ impl Port {
             }
         }
     }
-
     fn edge(&self) -> Option<Arc<Port>> {
         self.edge.lock().unwrap().as_ref().and_then(|x| x.upgrade())
     }
+
+    /// Returns a `Future` which writes a `Vec` of data to a port, returning the port.
+    /// Writing cannot currently fail: TODO make the type signature reflect this.
     pub fn write<T: 'static>(
         self: Arc<Port>,
-        data: impl Into<Box<[T]>>,
+        data: Vec<T>,
     ) -> impl Future<Item = Arc<Port>, Error = (Arc<Port>, Error)> {
         assert!(self.meta.out_ty == TypeId::of::<T>());
         WriteFuture::<T> {
@@ -348,6 +350,17 @@ impl Port {
             data: typed_as_bytes(data.into()),
         }.fuse()
     }
+    /// Write a single item. Equivalent to `write(vec![data])`
+    pub fn write1<T: 'static>(
+        self: Arc<Port>,
+        data: T,
+    ) -> impl Future<Item = Arc<Port>, Error = (Arc<Port>, Error)> {
+        self.write(vec![data])
+    }
+
+    /// Returns a `Future` which reads all available data from a port, returning the port and the
+    /// data. Succeeds when at least one item is available. Returns an error if the port has been
+    /// disconnected since the task began.
     pub fn read<T: 'static>(
         self: Arc<Port>,
     ) -> impl Future<Item = (Arc<Port>, Box<[T]>), Error = (Arc<Port>, Error)> {
@@ -358,6 +371,8 @@ impl Port {
             n: None,
         }.fuse()
     }
+    /// Read exactly n items from a port. Completes when at least n items become available. See
+    /// `read` for more information.
     pub fn read_n<T: 'static>(
         self: Arc<Port>,
         n: usize,
@@ -368,6 +383,13 @@ impl Port {
             port: Some(self),
             n: Some(n * mem::size_of::<T>()),
         }.fuse()
+    }
+    /// Equivalent to `read_n(1)`, but returns the item itself instead of a singleton array
+    pub fn read1<T: 'static>(
+        self: Arc<Port>,
+    ) -> impl Future<Item = (Arc<Port>, T), Error = (Arc<Port>, Error)> {
+        self.read_n(1)
+            .map(|(port, data)| (port, data.into_vec().drain(..).next().unwrap()))
     }
 }
 
@@ -390,14 +412,12 @@ impl<T: 'static> Future for ReadFuture<T> {
         // that we will be awoken.
         for try in 0..2 {
             // attempt to acquire buffer lock
-            if port
-                .buf_lock
+            if port.buf_lock
                 .compare_and_swap(false, true, Ordering::Acquire) == false
             {
                 // if a disconnect has occured, then we fail the future so that the task isn't left
                 // in a half finished state.
-                if port
-                    .disconnect_occured
+                if port.disconnect_occured
                     .compare_and_swap(true, false, Ordering::SeqCst)
                 {
                     port.buf_lock.store(false, Ordering::Release); // leave critical section
@@ -411,10 +431,13 @@ impl<T: 'static> Future for ReadFuture<T> {
                     // register to wake on next write
                     if let Some(old_reader) = port.reader_buf.swap(cx.waker(), Ordering::SeqCst) {
                         if cx.waker() != old_reader {
+                            // TODO this if statement is why i had to fork futures-rs
                             // this might be supported in the future,
                             // if you want multiple threads working on items from one port.
                             // but it's probably better implemented at another level of
                             // abstraction.
+                            // maybe we should have a list of active read futures, not waiting read
+                            // futures?
                             panic!("multiple simultaneous reads from a port are not supported");
                         }
                     }
@@ -445,7 +468,10 @@ impl<T: 'static> Future for ReadFuture<T> {
         port.buf_lock_q.try_pop().map(|x| x.wake());
 
         if let Some(data) = data {
-            Ok(Async::Ready((self.port.take().unwrap(), bytes_as_typed(data))))
+            Ok(Async::Ready((
+                self.port.take().unwrap(),
+                bytes_as_typed(data),
+            )))
         } else {
             // the waker would have been put into reader_buf if we get here
             Ok(Async::Pending)
@@ -465,12 +491,7 @@ impl<T: 'static> Future for WriteFuture<T> {
     fn poll(&mut self, cx: &mut Context) -> Result<Async<Self::Item>, Self::Error> {
         let port = self.port.as_ref().unwrap();
         let other = {
-            let edge = port
-                .edge
-                .lock()
-                .unwrap()
-                .as_ref()
-                .and_then(|x| x.upgrade());
+            let edge = port.edge.lock().unwrap().as_ref().and_then(|x| x.upgrade());
             match edge {
                 Some(other) => other,
                 None => {

@@ -31,17 +31,17 @@ impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
     }
     fn start<Ex: executor::Executor>(&mut self, mut exec: Ex) {
         exec.spawn(Box::new(future::loop_fn(self.port.clone(), |port| {
-            port.write(vec![1_usize])
-                .and_then(|port| port.read_n::<T>(1))
+            port.write1(1_usize) // request 1 item
+                .and_then(|port| port.read1::<T>()) // read the item
                 .map(|(port, input)| {
-                    println!("{:?}", input[0]);
+                    println!("{:?}", input); // print it to console
                     port
                 })
                 .recover(|(port, err)| {
                     println!("PErr {:?}", err);
                     port
                 })
-                .map(|port| future::Loop::Continue(port))
+                .map(future::Loop::Continue)
         }))).unwrap();
     }
     fn ports(&self) -> Vec<Arc<mf::Port>> {
@@ -68,15 +68,25 @@ impl<T: Copy + One + Zero + Add + Send + 'static> Module for Counter<T> {
     }
     fn start<Ex: executor::Executor>(&mut self, mut exec: Ex) {
         exec.spawn(Box::new(future::loop_fn(
-            (T::zero(), self.port.clone()),
-            |(count, port)| {
-                port.read_n::<usize>(1)
-                    .and_then(move |(port, _)| port.write(vec![count]))
-                    .recover(|(port, err)| {
-                        println!("CErr {:?}", err);
-                        port
+            (self.port.clone(), T::zero()),
+            |(port, mut count)| {
+                port.read1::<usize>() // read n
+                    .and_then(move |(port, n)| {
+                        // increment the current value n times, writing each value
+                        port.write(
+                            (0..n)
+                                .map(|_| {
+                                    count = count + T::one();
+                                    count
+                                })
+                                .collect(),
+                        ).map(move |port| (port, count)) // pass the new counter along
                     })
-                    .map(move |port| future::Loop::Continue((count + T::one(), port)))
+                    .recover(move |(data, err)| {
+                        println!("CErr {:?}", err);
+                        (data, count) // on error, reset back to the previous count (captured via move keyword)
+                    })
+                    .map(future::Loop::Continue)
             },
         ))).unwrap();
     }
