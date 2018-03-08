@@ -323,10 +323,12 @@ impl Port {
                 .compare_and_swap(false, true, Ordering::Acquire) == false
             {
                 self.disconnect_occured.store(true, Ordering::SeqCst);
-                self.reader_buf
-                    .take(Ordering::SeqCst)
-                    .map(|reader| reader.wake());
+                let reader = self.reader_buf.take(Ordering::SeqCst);
                 self.buf_lock.store(false, Ordering::Release);
+                // wake any readers that were waiting, since they need to fail now
+                reader.map(|reader| reader.wake());
+                // wake anyone that was waiting for the critical section
+                self.buf_lock_q.try_pop().map(|x| x.wake());
                 break;
             }
         }
