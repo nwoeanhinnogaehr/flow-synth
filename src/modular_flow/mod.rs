@@ -21,7 +21,6 @@ use std::collections::{HashMap, VecDeque};
 use std::mem;
 use std::slice;
 use std::any::TypeId;
-use std::borrow::Cow;
 use std::marker::PhantomData;
 
 /// A lightweight persistent identifier for a node.
@@ -95,11 +94,11 @@ impl Node {
         self.ifc.id()
     }
     /// Find a port by name (name is held within the associated `MetaPort`)
-    pub fn find_port(&self, name: &'static str) -> Option<Arc<Port>> {
+    pub fn find_port(&self, name: &'static str) -> Option<Arc<OpaquePort>> {
         self.ifc.find_port(name)
     }
     /// Get a vector of references to all associated ports at the time of the call.
-    pub fn ports(&self) -> Vec<Arc<Port>> {
+    pub fn ports(&self) -> Vec<Arc<OpaquePort>> {
         self.ifc.ports()
     }
 }
@@ -109,7 +108,7 @@ impl Node {
 /// associated Ports.
 pub struct Interface {
     id: NodeId,
-    ports: RwLock<HashMap<PortId, Arc<Port>>>,
+    ports: RwLock<HashMap<PortId, Arc<OpaquePort>>>,
     graph: Weak<Graph>,
 }
 
@@ -126,27 +125,30 @@ impl Interface {
         self.id
     }
     /// Find a port by name (name is held within the associated `MetaPort`)
-    pub fn find_port(&self, name: &str) -> Option<Arc<Port>> {
+    pub fn find_port(&self, name: &str) -> Option<Arc<OpaquePort>> {
         self.ports
             .read()
             .unwrap()
             .iter()
-            .find(|&(_, port)| port.meta.name == name)
+            .find(|&(_, port)| port.name() == name)
             .map(|port| port.1)
             .cloned()
     }
     /// Get a vector of references to all associated ports at the time of the call.
-    pub fn ports(&self) -> Vec<Arc<Port>> {
+    pub fn ports(&self) -> Vec<Arc<OpaquePort>> {
         self.ports.read().unwrap().values().cloned().collect()
     }
     /// Add a new port using the given metadata.
-    pub fn add_port(&self, meta: &MetaPort) -> Arc<Port> {
-        let port = Port::new(&self.graph.upgrade().unwrap(), meta);
-        self.ports.write().unwrap().insert(port.id, port.clone());
+    pub fn add_port<I: 'static, O: 'static>(&self, name: String) -> Arc<Port<I, O>> {
+        let port = Port::new(&self.graph.upgrade().unwrap(), name);
+        self.ports
+            .write()
+            .unwrap()
+            .insert(port.id, Arc::clone(port.as_opaque()));
         port
     }
     /// Remove a port by ID.
-    pub fn remove_port(&self, port: PortId) -> Result<Arc<Port>, Error> {
+    pub fn remove_port(&self, port: PortId) -> Result<Arc<OpaquePort>, Error> {
         self.ports
             .write()
             .unwrap()
@@ -155,57 +157,57 @@ impl Interface {
     }
 }
 
-/// Port metadata.
-#[derive(Clone)]
-pub struct MetaPort {
-    name: Cow<'static, str>,
-    in_ty: TypeId,
-    out_ty: TypeId,
-}
-
-impl MetaPort {
-    /// Construct new port metadata with the given datatype and name.
-    pub fn new<InT: 'static, OutT: 'static, N: Into<Cow<'static, str>>>(name: N) -> MetaPort {
-        // sending ZSTs doesn't really make sense,
-        // and will cause all kinds of confusing behavior like having
-        // an infinite number of items available to read
-        assert!(mem::size_of::<InT>() != 0);
-        assert!(mem::size_of::<OutT>() != 0);
-        MetaPort {
-            name: name.into(),
-            in_ty: TypeId::of::<InT>(),
-            out_ty: TypeId::of::<OutT>(),
-        }
-    }
-    /// Get the port name.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-}
-
 /// Ports are the connection points of modules. They can be connected one-to-one with other ports,
-/// and allow a single type of data (runtime checked) to flow bidirectionally.
+/// allowing data of type `I` to flow in and data of type `O` to flow out.
 ///
 /// TODO think about interactions/problems with multiple graphs
-pub struct Port {
-    meta: MetaPort,
+pub struct Port<I: 'static, O: 'static> {
+    _in: PhantomData<I>,
+    _out: PhantomData<O>,
+    in_ty: TypeId,
+    out_ty: TypeId,
+    name: String,
     id: PortId,
     buf_lock: AtomicBool,
     buf_lock_q: SegQueue<task::Waker>,
     buffer: UnsafeCell<VecDeque<u8>>,
     reader_buf: AtomicOption<task::Waker>,
     connect_wait: UnsafeCell<Vec<task::Waker>>,
-    edge: Mutex<Option<Weak<Port>>>,
+    edge: Mutex<Option<Weak<Port<O, I>>>>,
     disconnect_occured: AtomicBool,
 }
 
-unsafe impl Send for Port {}
-unsafe impl Sync for Port {}
+unsafe impl<I: 'static, O: 'static> Send for Port<I, O> {}
+unsafe impl<I: 'static, O: 'static> Sync for Port<I, O> {}
 
-impl Port {
-    fn new(graph: &Graph, meta: &MetaPort) -> Arc<Port> {
+/// An OpaquePort is a port with erased types at the type level. It can be downcast to a typed port
+/// by calling `as_typed`.
+pub type OpaquePort = Port<!, !>;
+
+impl OpaquePort {
+    /// Downcasts this `OpaquePort` to a port with the given types. Returns None if the given types
+    /// do not match the underlying port.
+    pub fn as_typed<'a, NewI: 'static, NewO: 'static>(
+        self: &'a Arc<OpaquePort>,
+    ) -> Option<&'a Arc<Port<NewI, NewO>>> {
+        if TypeId::of::<NewI>() == self.in_ty && TypeId::of::<NewO>() == self.out_ty {
+            Some(unsafe { mem::transmute::<&Arc<OpaquePort>, &Arc<Port<NewI, NewO>>>(self) })
+        } else {
+            None
+        }
+    }
+}
+
+impl<I: 'static, O: 'static> Port<I, O> {
+    fn new(graph: &Graph, name: String) -> Arc<Port<I, O>> {
+        assert!(mem::size_of::<I>() != 0);
+        assert!(mem::size_of::<O>() != 0);
         Arc::new(Port {
-            meta: MetaPort::clone(meta),
+            _in: PhantomData,
+            _out: PhantomData,
+            in_ty: TypeId::of::<I>(),
+            out_ty: TypeId::of::<O>(),
+            name,
             id: PortId(graph.generate_id()),
             buf_lock: AtomicBool::new(false),
             buf_lock_q: SegQueue::new(),
@@ -217,31 +219,37 @@ impl Port {
         })
     }
 
-    /// Get the associated metadata.
-    pub fn meta(&self) -> &MetaPort {
-        &self.meta
+    /// Erases types from the signature of this port, returning the corresponding OpaquePort.
+    pub fn as_opaque<'a>(self: &'a Arc<Port<I, O>>) -> &'a Arc<OpaquePort> {
+        unsafe { mem::transmute::<&Arc<Port<I, O>>, &Arc<OpaquePort>>(self) }
     }
     /// Get the PortId.
     pub fn id(&self) -> PortId {
         self.id
     }
-    /// Connect this port to another.
-    /// Fails with ConnectError::TypeMismatch if the ports have different data types.
-    /// Fails with ConnectError::AlreadyConnected if either port is already connected.
-    pub fn connect(self: &Arc<Port>, other: &Arc<Port>) -> Result<(), ConnectError> {
-        if self.meta.in_ty != other.meta.out_ty || self.meta.out_ty != other.meta.in_ty {
+    /// Get the port name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    /// Connect this port to another. If either port is opaque and the ports have unmatched
+    /// underlying types, this fails with ConnectError::TypeMismatch. Fails with
+    /// ConnectError::AlreadyConnected if either port is already connected.
+    pub fn connect(self: &Arc<Port<I, O>>, other: &Arc<Port<O, I>>) -> Result<(), ConnectError> {
+        if self.in_ty != other.out_ty || self.out_ty != other.in_ty {
             return Err(ConnectError::TypeMismatch);
         }
-        if Arc::ptr_eq(self, other) {
+        if self.id() == other.id() {
             // self edges are currently not supported
             unimplemented!();
         } else {
+            let self_untyped = self.as_opaque();
+            let other_untyped = other.as_opaque();
             // always lock the port with lower id first to prevent deadlock
             // (circular wait condition)
             let (a, b) = if self.id().0 < other.id().0 {
-                (self, other)
+                (self_untyped, other_untyped)
             } else {
-                (other, self)
+                (other_untyped, self_untyped)
             };
             let mut a_edge = a.edge.lock().unwrap();
             let mut b_edge = b.edge.lock().unwrap();
@@ -250,8 +258,8 @@ impl Port {
             {
                 return Err(ConnectError::AlreadyConnected);
             }
-            *a_edge = Some(Arc::downgrade(b));
-            *b_edge = Some(Arc::downgrade(a));
+            *a_edge = Some(Arc::downgrade(&b));
+            *b_edge = Some(Arc::downgrade(&a));
 
             // UnsafeCells protected by edge mutex
             let self_connect_wait = unsafe { &mut *self.connect_wait.get() };
@@ -268,7 +276,7 @@ impl Port {
 
     /// Disconnect this port from another.
     /// Fails with ConnectError::NotConnected if the port is already disconnected.
-    pub fn disconnect(self: &Arc<Port>) -> Result<(), ConnectError> {
+    pub fn disconnect(self: &Arc<Port<I, O>>) -> Result<(), ConnectError> {
         // similarly to with `connect`, we need to lock the edges of the two ports in
         // a deterministic order to prevent a deadlock.
         // but here, we don't know the other port until we lock this port.
@@ -278,7 +286,7 @@ impl Port {
         // if verification fails we race again until it succeeds.
         loop {
             let other = &self.edge().ok_or(ConnectError::NotConnected)?;
-            if Arc::ptr_eq(other, self) {
+            if other.id() == self.id() {
                 // self edges are currently not supported
                 unimplemented!();
             } else {
@@ -333,75 +341,68 @@ impl Port {
             }
         }
     }
-    fn edge(&self) -> Option<Arc<Port>> {
+    fn edge(&self) -> Option<Arc<Port<O, I>>> {
         self.edge.lock().unwrap().as_ref().and_then(|x| x.upgrade())
     }
 
     /// Returns a `Future` which writes a `Vec` of data to a port, returning the port.
     /// Writing cannot currently fail: TODO make the type signature reflect this.
-    pub fn write<T: 'static>(
-        self: Arc<Port>,
-        data: Vec<T>,
-    ) -> impl Future<Item = Arc<Port>, Error = (Arc<Port>, Error)> {
-        assert!(self.meta.out_ty == TypeId::of::<T>());
-        WriteFuture::<T> {
-            _t: PhantomData,
+    pub fn write(
+        self: Arc<Port<I, O>>,
+        data: Vec<O>,
+    ) -> impl Future<Item = Arc<Port<I, O>>, Error = (Arc<Port<I, O>>, Error)> {
+        WriteFuture {
             port: Some(self),
             data: typed_as_bytes(data.into()),
         }.fuse()
     }
     /// Write a single item. Equivalent to `write(vec![data])`
-    pub fn write1<T: 'static>(
-        self: Arc<Port>,
-        data: T,
-    ) -> impl Future<Item = Arc<Port>, Error = (Arc<Port>, Error)> {
+    pub fn write1(
+        self: Arc<Port<I, O>>,
+        data: O,
+    ) -> impl Future<Item = Arc<Port<I, O>>, Error = (Arc<Port<I, O>>, Error)> {
         self.write(vec![data])
     }
 
     /// Returns a `Future` which reads all available data from a port, returning the port and the
     /// data. Succeeds when at least one item is available. Returns an error if the port has been
     /// disconnected since the task began.
-    pub fn read<T: 'static>(
-        self: Arc<Port>,
-    ) -> impl Future<Item = (Arc<Port>, Box<[T]>), Error = (Arc<Port>, Error)> {
-        assert!(self.meta.in_ty == TypeId::of::<T>());
+    pub fn read(
+        self: Arc<Port<I, O>>,
+    ) -> impl Future<Item = (Arc<Port<I, O>>, Box<[I]>), Error = (Arc<Port<I, O>>, Error)> {
         ReadFuture {
-            _t: PhantomData,
             port: Some(self),
             n: None,
         }.fuse()
     }
     /// Read exactly n items from a port. Completes when at least n items become available. See
     /// `read` for more information.
-    pub fn read_n<T: 'static>(
-        self: Arc<Port>,
+    pub fn read_n(
+        self: Arc<Port<I, O>>,
         n: usize,
-    ) -> impl Future<Item = (Arc<Port>, Box<[T]>), Error = (Arc<Port>, Error)> {
-        assert!(self.meta.in_ty == TypeId::of::<T>());
+    ) -> impl Future<Item = (Arc<Port<I, O>>, Box<[I]>), Error = (Arc<Port<I, O>>, Error)> {
         ReadFuture {
-            _t: PhantomData,
             port: Some(self),
-            n: Some(n * mem::size_of::<T>()),
+            n: Some(n * mem::size_of::<I>()),
         }.fuse()
     }
     /// Equivalent to `read_n(1)`, but returns the item itself instead of a singleton array
-    pub fn read1<T: 'static>(
-        self: Arc<Port>,
-    ) -> impl Future<Item = (Arc<Port>, T), Error = (Arc<Port>, Error)> {
+    pub fn read1(
+        self: Arc<Port<I, O>>,
+    ) -> impl Future<Item = (Arc<Port<I, O>>, I), Error = (Arc<Port<I, O>>, Error)> {
         self.read_n(1)
             .map(|(port, data)| (port, data.into_vec().drain(..).next().unwrap()))
     }
 }
 
-pub struct ReadFuture<T: 'static> {
-    _t: PhantomData<T>,
-    port: Option<Arc<Port>>,
+pub struct ReadFuture<I: 'static, O: 'static> {
+    port: Option<Arc<Port<I, O>>>,
     n: Option<usize>,
 }
 
-impl<T: 'static> Future for ReadFuture<T> {
-    type Item = (Arc<Port>, Box<[T]>);
-    type Error = (Arc<Port>, Error);
+impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
+    type Item = (Arc<Port<I, O>>, Box<[I]>);
+    type Error = (Arc<Port<I, O>>, Error);
     fn poll(&mut self, cx: &mut Context) -> Result<Async<Self::Item>, Self::Error> {
         let mut data = None;
         let port = self.port.as_ref().unwrap();
@@ -479,15 +480,14 @@ impl<T: 'static> Future for ReadFuture<T> {
     }
 }
 
-pub struct WriteFuture<T: 'static> {
-    _t: PhantomData<T>,
-    port: Option<Arc<Port>>,
+pub struct WriteFuture<I: 'static, O: 'static> {
+    port: Option<Arc<Port<I, O>>>,
     data: Box<[u8]>,
 }
 
-impl<T: 'static> Future for WriteFuture<T> {
-    type Item = Arc<Port>;
-    type Error = (Arc<Port>, Error);
+impl<I: 'static, O: 'static> Future for WriteFuture<I, O> {
+    type Item = Arc<Port<I, O>>;
+    type Error = (Arc<Port<I, O>>, Error);
     fn poll(&mut self, cx: &mut Context) -> Result<Async<Self::Item>, Self::Error> {
         let port = self.port.as_ref().unwrap();
         let other = {

@@ -12,6 +12,7 @@
 #![feature(drain_filter)]
 #![feature(nll)]
 #![feature(arbitrary_self_types)]
+#![feature(never_type)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 

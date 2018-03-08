@@ -13,15 +13,15 @@ pub trait JackBackend {
     fn disconnect(&self);
 }
 
-impl JackBackend for Arc<mf::Port> {
+impl JackBackend for Arc<mf::OpaquePort> {
     fn label(&self) -> &str {
-        self.meta().name()
+        self.name()
     }
     fn connect(&self, other: &Self) {
-        mf::Port::connect(self, other).unwrap();
+        mf::OpaquePort::connect(self, other).unwrap();
     }
     fn disconnect(&self) {
-        mf::Port::disconnect(self).unwrap();
+        mf::OpaquePort::disconnect(self).unwrap();
     }
 }
 

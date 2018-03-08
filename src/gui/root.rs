@@ -19,7 +19,7 @@ pub struct Root {
     modules: Vec<Box<GuiModule>>,
     module_types: Vec<Box<GuiModuleFactory>>,
     context_menu: Option<MenuView>,
-    jack_ctx: Rc<JackContext<Arc<mf::Port>>>,
+    jack_ctx: Rc<JackContext<Arc<mf::OpaquePort>>>,
     executor: ThreadPool,
 }
 

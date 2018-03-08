@@ -14,7 +14,7 @@ pub struct GuiModuleConfig {
     pub graph: Arc<mf::Graph>,
     pub ctx: RenderContext,
     pub bounds: Box3,
-    pub jack_ctx: Rc<JackContext<Arc<mf::Port>>>,
+    pub jack_ctx: Rc<JackContext<Arc<mf::OpaquePort>>>,
     pub executor: ThreadPool,
 }
 pub trait GuiModuleFactory {
@@ -50,13 +50,13 @@ const TITLE_BAR_HEIGHT: f32 = 24.0;
 const BORDER_SIZE: f32 = 1.0;
 
 pub struct GuiModuleWrapper<T: Module + 'static> {
-    _t: PhantomData<T>,
+    module: T,
     node: Arc<mf::Node>,
 
     target: TextureTarget,
 
     delete_button: Button,
-    jacks: Vec<Rc<Jack<Arc<mf::Port>>>>,
+    jacks: Vec<Rc<Jack<Arc<mf::OpaquePort>>>>,
     bounds: Box3,
     drag: Option<Pt2>,
     dirty: bool,
@@ -91,7 +91,7 @@ impl<T: Module + 'static> GuiModuleWrapper<T> {
         module.start(executor);
 
         GuiModuleWrapper {
-            _t: PhantomData,
+            module,
             node,
             target,
             delete_button: Button::new(

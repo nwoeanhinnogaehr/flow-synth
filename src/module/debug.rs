@@ -14,12 +14,12 @@ use std::marker::PhantomData;
 
 pub struct Printer<T: Debug + Send + Sync + 'static> {
     ifc: Arc<mf::Interface>,
-    port: Arc<mf::Port>,
+    port: Arc<mf::Port<T, usize>>,
     _t: PhantomData<T>,
 }
 impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
     fn new(ifc: Arc<mf::Interface>) -> Printer<T> {
-        let port = ifc.add_port(&mf::MetaPort::new::<T, usize, _>("Input"));
+        let port = ifc.add_port::<T, usize>("Input".into());
         Printer {
             ifc,
             port,
@@ -31,8 +31,8 @@ impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
     }
     fn start<Ex: executor::Executor>(&mut self, mut exec: Ex) {
         exec.spawn(Box::new(future::loop_fn(self.port.clone(), |port| {
-            port.write1(1_usize) // request 1 item
-                .and_then(|port| port.read1::<T>()) // read the item
+            port.write1(1) // request 1 item
+                .and_then(|port| port.read1()) // read the item
                 .map(|(port, input)| {
                     println!("{:?}", input); // print it to console
                     port
@@ -44,19 +44,19 @@ impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
                 .map(future::Loop::Continue)
         }))).unwrap();
     }
-    fn ports(&self) -> Vec<Arc<mf::Port>> {
+    fn ports(&self) -> Vec<Arc<mf::OpaquePort>> {
         self.ifc.ports()
     }
 }
 
 pub struct Counter<T: Copy + One + Zero + Add + Send + 'static> {
     ifc: Arc<mf::Interface>,
-    port: Arc<mf::Port>,
+    port: Arc<mf::Port<usize, T>>,
     _t: PhantomData<T>,
 }
 impl<T: Copy + One + Zero + Add + Send + 'static> Module for Counter<T> {
     fn new(ifc: Arc<mf::Interface>) -> Counter<T> {
-        let port = ifc.add_port(&mf::MetaPort::new::<usize, T, _>("Output"));
+        let port = ifc.add_port::<usize, T>("Output".into());
         Counter {
             ifc,
             port,
@@ -70,7 +70,7 @@ impl<T: Copy + One + Zero + Add + Send + 'static> Module for Counter<T> {
         exec.spawn(Box::new(future::loop_fn(
             (self.port.clone(), T::zero()),
             |(port, mut count)| {
-                port.read1::<usize>() // read n
+                port.read1() // read n
                     .and_then(move |(port, n)| {
                         // increment the current value n times, writing each value
                         port.write(
@@ -90,7 +90,7 @@ impl<T: Copy + One + Zero + Add + Send + 'static> Module for Counter<T> {
             },
         ))).unwrap();
     }
-    fn ports(&self) -> Vec<Arc<mf::Port>> {
+    fn ports(&self) -> Vec<Arc<mf::OpaquePort>> {
         self.ifc.ports()
     }
 }
