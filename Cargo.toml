@@ -10,5 +10,5 @@ gfx_window_glutin = "*"
 gfx_text = "*"
 gfx_device_gl = "*"
 num = "*"
-futures = { git = "https://github.com/nwoeanhinnogaehr/futures-rs", branch = "WakerDerive" }
+futures = "0.2.0-alpha"
 crossbeam = "*"

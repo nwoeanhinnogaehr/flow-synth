@@ -431,8 +431,7 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
                     // not enough data available
                     // register to wake on next write
                     if let Some(old_reader) = port.reader_buf.swap(cx.waker(), Ordering::SeqCst) {
-                        if cx.waker() != old_reader {
-                            // TODO this if statement is why i had to fork futures-rs
+                        if !cx.waker().will_wake(&old_reader) {
                             // this might be supported in the future,
                             // if you want multiple threads working on items from one port.
                             // but it's probably better implemented at another level of
