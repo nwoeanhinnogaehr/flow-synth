@@ -1,4 +1,5 @@
 pub mod debug;
+pub mod audio_io;
 
 use std::sync::Arc;
 use modular_flow as mf;

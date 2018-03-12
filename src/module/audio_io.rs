@@ -1,0 +1,170 @@
+use futures::prelude::*;
+use futures::executor;
+use futures::future;
+use futures::channel::mpsc;
+use futures::task;
+
+use module::Module;
+use modular_flow as mf;
+use future_ext::FutureWrapExt;
+
+use jack::*;
+
+use std::sync::Arc;
+
+type Frame = Vec<Vec<f32>>;
+pub struct AudioIO {
+    ifc: Arc<mf::Interface>,
+    in_port: Option<Arc<mf::Port<Frame, usize>>>,
+    out_port: Option<Arc<mf::Port<usize, Frame>>>,
+}
+impl Module for AudioIO {
+    fn new(ifc: Arc<mf::Interface>) -> AudioIO {
+        let in_port = Some(ifc.add_port("Input".into()));
+        let out_port = Some(ifc.add_port("Output".into()));
+        AudioIO {
+            ifc,
+            in_port,
+            out_port,
+        }
+    }
+    fn name() -> &'static str {
+        "AudioIO"
+    }
+    fn start<Ex: executor::Executor>(&mut self, mut exec: Ex) {
+        exec.spawn(Box::new(AudioIOFuture::new(self))).unwrap();
+    }
+    fn ports(&self) -> Vec<Arc<mf::OpaquePort>> {
+        self.ifc.ports()
+    }
+}
+
+struct AudioIOFuture {
+    client: Option<AsyncClient<(), Processor>>,
+    future: Box<Future<Item = (), Error = Never> + Send>,
+    output_rx: Option<mpsc::Receiver<Frame>>,
+    input_tx: Option<mpsc::Sender<Frame>>,
+}
+
+impl AudioIOFuture {
+    fn new(base: &mut AudioIO) -> AudioIOFuture {
+        let (input_tx, input_rx) = mpsc::channel(1);
+        let (output_tx, output_rx) = mpsc::channel(1);
+        let in_port = base.in_port.take().unwrap();
+        let out_port = base.out_port.take().unwrap();
+        let in_future = future::loop_fn((input_rx, out_port), |(recv, port)| {
+            port.read1()
+                .wrap(recv)
+                .map_err(|(recv, (port, err))| (recv, port, format!("read1 {:?}", err)))
+                .and_then(|(recv, (port, req))| {
+                    recv.into_future()
+                        .map(|(frame, recv)| (frame.unwrap(), recv, port))
+                        .map_err(|(_err, _recv)| panic!()) // error: Never, panic impossible!
+                })
+                .and_then(|(frame, recv, port)| {
+                    port.write1(frame)
+                        .wrap(recv)
+                        .map_err(|(recv, (port, err))| (recv, port, format!("write1 {:?}", err)))
+                })
+                .recover(|(recv, port, err)| {
+                    println!("In err: {}", err);
+                    (recv, port)
+                })
+                .map(future::Loop::Continue)
+        });
+        let out_future = future::loop_fn((output_tx, in_port), |(tx, port)| {
+            port.write1(1)
+                .wrap(tx)
+                .map_err(|(tx, (port, err))| (tx, port, format!("write1 {:?}", err)))
+                .and_then(|(tx, port)| {
+                    port.read1()
+                        .wrap(tx)
+                        .map_err(|(tx, (port, err))| (tx, port, format!("read1 {:?}", err)))
+                })
+                .and_then(|(tx, (port, frame))| {
+                    tx.send(frame).map(|tx| (tx, port)).map_err(|err| panic!()) // error: Never, panic impossible!
+                })
+                .recover(|(tx, port, err)| {
+                    println!("Out err: {}", err);
+                    (tx, port)
+                })
+                .map(future::Loop::Continue)
+        });
+        AudioIOFuture {
+            client: None,
+            input_tx: Some(input_tx),
+            output_rx: Some(output_rx),
+            future: Box::new(in_future.join(out_future).map(|((), ())| ())),
+        }
+    }
+    fn initialize(&mut self) {
+        // setup jack
+        if self.client.is_none() {
+            let n_inputs = 2;
+            let n_outputs = 2;
+            let (client, _status) = Client::new("flow-synth", ClientOptions::NO_START_SERVER).unwrap();
+            // create ports
+            let inputs: Vec<_> = (0..n_inputs)
+                .map(|i| {
+                    client
+                        .register_port(&format!("in-{}", i), AudioIn::default())
+                        .unwrap()
+                })
+                .collect();
+            let outputs: Vec<_> = (0..n_outputs)
+                .map(|i| {
+                    client
+                        .register_port(&format!("out-{}", i), AudioOut::default())
+                        .unwrap()
+                })
+                .collect();
+
+            // activate the client
+            let processor = Processor {
+                inputs,
+                outputs,
+                input_tx: self.input_tx.take().unwrap(),
+                output_rx: self.output_rx.take().unwrap(),
+            };
+            self.client = Some(AsyncClient::new(client, (), processor).unwrap());
+        }
+    }
+}
+impl Future for AudioIOFuture {
+    type Item = ();
+    type Error = Never;
+    fn poll(&mut self, cx: &mut task::Context) -> Poll<Self::Item, Self::Error> {
+        self.initialize();
+        self.future.poll(cx)
+    }
+}
+
+struct Processor {
+    inputs: Vec<Port<AudioIn>>,
+    outputs: Vec<Port<AudioOut>>,
+    input_tx: mpsc::Sender<Frame>,
+    output_rx: mpsc::Receiver<Frame>,
+}
+impl ProcessHandler for Processor {
+    fn process(&mut self, client: &Client, ps: &ProcessScope) -> Control {
+        let in_frame = self.inputs
+            .iter()
+            .map(|input| input.as_slice(ps).to_vec())
+            .collect();
+        // ignore errors, prefer to drop the frame
+        let _ = self.input_tx.try_send(in_frame);
+        if let Ok(frame) = self.output_rx.try_next() {
+            for (output, buffer) in self.outputs.iter_mut().zip(frame.unwrap().iter()) {
+                output.as_mut_slice(ps).clone_from_slice(&buffer);
+            }
+        } else {
+            for output in &mut self.outputs {
+                for sample in output.as_mut_slice(ps) {
+                    *sample = 0.0;
+                }
+            }
+        }
+
+        Control::Continue
+    }
+}

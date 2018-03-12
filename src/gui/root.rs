@@ -1,7 +1,6 @@
 //! Root component that holds the application
 
 use gui::{component::*, connect::*, event::*, geom::*, menu::*, module_gui::*, render::*};
-use module::debug::*;
 use modular_flow as mf;
 
 use gfx_device_gl as gl;
@@ -196,8 +195,11 @@ impl GuiComponent for Root {
 }
 
 fn load_metamodules() -> Vec<Box<GuiModuleFactory>> {
+    use module::debug::*;
+    use module::audio_io::*;
     vec![
         Box::new(BasicGuiModuleFactory::<Printer<i32>>::new()),
         Box::new(BasicGuiModuleFactory::<Counter<i32>>::new()),
+        Box::new(BasicGuiModuleFactory::<AudioIO>::new()),
     ]
 }

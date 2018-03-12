@@ -10,5 +10,6 @@ gfx_window_glutin = "*"
 gfx_text = "*"
 gfx_device_gl = "*"
 num = "*"
-futures = "0.2.0-alpha"
+futures = { git = "https://github.com/rust-lang-nursery/futures-rs" }
 crossbeam = "*"
+jack = "*"

@@ -17,6 +17,7 @@
 #![allow(unused_variables)]
 
 extern crate crossbeam;
+#[macro_use]
 extern crate futures;
 #[macro_use]
 extern crate gfx;
@@ -24,11 +25,13 @@ extern crate gfx_device_gl;
 extern crate gfx_text;
 extern crate gfx_window_glutin;
 extern crate glutin;
+extern crate jack;
 extern crate num;
 
 mod module;
 mod modular_flow;
 mod gui;
+mod future_ext;
 
 fn main() {
     gui::gui_main();

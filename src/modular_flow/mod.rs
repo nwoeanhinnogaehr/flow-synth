@@ -422,6 +422,7 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
                     .compare_and_swap(true, false, Ordering::SeqCst)
                 {
                     port.buf_lock.store(false, Ordering::Release); // leave critical section
+                    port.buf_lock_q.try_pop().map(|x| x.wake()); // wake someone waiting for it
                     return Err((self.port.take().unwrap(), Error::Disconnected));
                 }
                 // the buffer is protected by buf_lock
@@ -430,7 +431,7 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
                 if self.n.map(|n| buf.len() < n).unwrap_or(buf.len() == 0) {
                     // not enough data available
                     // register to wake on next write
-                    if let Some(old_reader) = port.reader_buf.swap(cx.waker(), Ordering::SeqCst) {
+                    if let Some(old_reader) = port.reader_buf.swap(cx.waker().clone(), Ordering::SeqCst) {
                         if !cx.waker().will_wake(&old_reader) {
                             // this might be supported in the future,
                             // if you want multiple threads working on items from one port.
@@ -455,7 +456,7 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
                 // couldn't lock buffer
                 if try == 0 {
                     // first time around, register this future to be notified upon critical section exit
-                    port.buf_lock_q.push(cx.waker());
+                    port.buf_lock_q.push(cx.waker().clone());
                 } else {
                     // on the second try, the above line has already run so we can yield
                     return Ok(Async::Pending);
@@ -496,7 +497,7 @@ impl<I: 'static, O: 'static> Future for WriteFuture<I, O> {
                 None => {
                     // register to wake on connect
                     let connect_wait = unsafe { &mut *port.connect_wait.get() };
-                    connect_wait.push(cx.waker());
+                    connect_wait.push(cx.waker().clone());
                     return Ok(Async::Pending);
                 }
             }
@@ -518,7 +519,7 @@ impl<I: 'static, O: 'static> Future for WriteFuture<I, O> {
                 // couldn't lock buffer
                 // register this future to be notified upon critical section exit
                 if try == 0 {
-                    other.buf_lock_q.push(cx.waker());
+                    other.buf_lock_q.push(cx.waker().clone());
                 } else {
                     return Ok(Async::Pending);
                 }
