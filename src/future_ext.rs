@@ -1,3 +1,5 @@
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+
 use futures::prelude::*;
 
 pub struct FutureWrap<F: Future, T> {
@@ -27,3 +29,21 @@ pub trait FutureWrapExt: Future {
     }
 }
 impl<T: Future + ?Sized> FutureWrapExt for T {}
+
+#[derive(Clone)]
+pub struct Breaker {
+    broken: Arc<AtomicBool>,
+}
+impl Breaker {
+    pub fn new() -> Breaker {
+        Breaker {
+            broken: Arc::new(AtomicBool::new(false)),
+        }
+    }
+    pub fn brake(&self) {
+        self.broken.store(true, Ordering::Relaxed);
+    }
+    pub fn test(&self) -> bool {
+        self.broken.load(Ordering::Relaxed)
+    }
+}

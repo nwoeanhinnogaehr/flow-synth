@@ -13,5 +13,6 @@ pub trait Module: Send {
     where
         Self: Sized;
     fn start<Ex: executor::Executor>(&mut self, exec: Ex);
+    fn stop(&mut self);
     fn ports(&self) -> Vec<Arc<mf::OpaquePort>>;
 }

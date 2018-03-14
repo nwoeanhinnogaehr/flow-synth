@@ -4,6 +4,7 @@ use futures::future;
 
 use module::Module;
 use modular_flow as mf;
+use future_ext::Breaker;
 
 use num::{One, Zero};
 use std::ops::Add;
@@ -15,6 +16,7 @@ use std::marker::PhantomData;
 pub struct Printer<T: Debug + Send + Sync + 'static> {
     ifc: Arc<mf::Interface>,
     port: Arc<mf::Port<T, usize>>,
+    breaker: Breaker,
     _t: PhantomData<T>,
 }
 impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
@@ -23,6 +25,7 @@ impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
         Printer {
             ifc,
             port,
+            breaker: Breaker::new(),
             _t: PhantomData,
         }
     }
@@ -30,7 +33,7 @@ impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
         "Printer"
     }
     fn start<Ex: executor::Executor>(&mut self, mut exec: Ex) {
-        exec.spawn(Box::new(future::loop_fn(self.port.clone(), |port| {
+        exec.spawn(Box::new(future::loop_fn((self.port.clone(), self.breaker.clone()), |(port, breaker)| {
             port.write1(1) // request 1 item
                 .and_then(|port| port.read1()) // read the item
                 .map(|(port, input)| {
@@ -41,8 +44,17 @@ impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
                     println!("PErr {:?}", err);
                     port
                 })
-                .map(future::Loop::Continue)
+                .map(|port| {
+                    if breaker.test() {
+                        future::Loop::Break(())
+                    } else {
+                        future::Loop::Continue((port, breaker))
+                    }
+                })
         }))).unwrap();
+    }
+    fn stop(&mut self) {
+        self.breaker.brake();
     }
     fn ports(&self) -> Vec<Arc<mf::OpaquePort>> {
         self.ifc.ports()
@@ -52,6 +64,7 @@ impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
 pub struct Counter<T: Copy + One + Zero + Add + Send + 'static> {
     ifc: Arc<mf::Interface>,
     port: Arc<mf::Port<usize, T>>,
+    breaker: Breaker,
     _t: PhantomData<T>,
 }
 impl<T: Copy + One + Zero + Add + Send + 'static> Module for Counter<T> {
@@ -60,6 +73,7 @@ impl<T: Copy + One + Zero + Add + Send + 'static> Module for Counter<T> {
         Counter {
             ifc,
             port,
+            breaker: Breaker::new(),
             _t: PhantomData,
         }
     }
@@ -68,8 +82,8 @@ impl<T: Copy + One + Zero + Add + Send + 'static> Module for Counter<T> {
     }
     fn start<Ex: executor::Executor>(&mut self, mut exec: Ex) {
         exec.spawn(Box::new(future::loop_fn(
-            (self.port.clone(), T::zero()),
-            |(port, mut count)| {
+            (self.port.clone(), T::zero(), self.breaker.clone()),
+            |(port, mut count, breaker)| {
                 port.read1() // read n
                     .and_then(move |(port, n)| {
                         // increment the current value n times, writing each value
@@ -86,9 +100,18 @@ impl<T: Copy + One + Zero + Add + Send + 'static> Module for Counter<T> {
                         println!("CErr {:?}", err);
                         (data, count) // on error, reset back to the previous count (captured via move keyword)
                     })
-                    .map(future::Loop::Continue)
+                    .map(|(port, count)| {
+                        if breaker.test() {
+                            future::Loop::Break(())
+                        } else {
+                            future::Loop::Continue((port, count, breaker))
+                        }
+                    })
             },
         ))).unwrap();
+    }
+    fn stop(&mut self) {
+        self.breaker.brake();
     }
     fn ports(&self) -> Vec<Arc<mf::OpaquePort>> {
         self.ifc.ports()

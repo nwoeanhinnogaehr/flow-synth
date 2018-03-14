@@ -6,7 +6,7 @@ use futures::task;
 
 use module::Module;
 use modular_flow as mf;
-use future_ext::FutureWrapExt;
+use future_ext::{FutureWrapExt, Breaker};
 
 use jack::*;
 
@@ -17,6 +17,7 @@ pub struct AudioIO {
     ifc: Arc<mf::Interface>,
     in_port: Option<Arc<mf::Port<Frame, usize>>>,
     out_port: Option<Arc<mf::Port<usize, Frame>>>,
+    breaker: Breaker,
 }
 impl Module for AudioIO {
     fn new(ifc: Arc<mf::Interface>) -> AudioIO {
@@ -26,6 +27,7 @@ impl Module for AudioIO {
             ifc,
             in_port,
             out_port,
+            breaker: Breaker::new(),
         }
     }
     fn name() -> &'static str {
@@ -33,6 +35,9 @@ impl Module for AudioIO {
     }
     fn start<Ex: executor::Executor>(&mut self, mut exec: Ex) {
         exec.spawn(Box::new(AudioIOFuture::new(self))).unwrap();
+    }
+    fn stop(&mut self) {
+        self.breaker.brake();
     }
     fn ports(&self) -> Vec<Arc<mf::OpaquePort>> {
         self.ifc.ports()
@@ -44,6 +49,7 @@ struct AudioIOFuture {
     future: Box<Future<Item = (), Error = Never> + Send>,
     output_rx: Option<mpsc::Receiver<Frame>>,
     input_tx: Option<mpsc::Sender<Frame>>,
+    breaker: Breaker,
 }
 
 impl AudioIOFuture {
@@ -52,7 +58,7 @@ impl AudioIOFuture {
         let (output_tx, output_rx) = mpsc::channel(1);
         let in_port = base.in_port.take().unwrap();
         let out_port = base.out_port.take().unwrap();
-        let in_future = future::loop_fn((input_rx, out_port), |(recv, port)| {
+        let in_future = future::loop_fn((input_rx, out_port, base.breaker.clone()), |(recv, port, breaker)| {
             port.read1()
                 .wrap(recv)
                 .map_err(|(recv, (port, err))| (recv, port, format!("read1 {:?}", err)))
@@ -70,9 +76,15 @@ impl AudioIOFuture {
                     println!("In err: {}", err);
                     (recv, port)
                 })
-                .map(future::Loop::Continue)
+                .map(|(recv, port)| {
+                    if breaker.test() {
+                        future::Loop::Break(())
+                    } else {
+                        future::Loop::Continue((recv, port, breaker))
+                    }
+                })
         });
-        let out_future = future::loop_fn((output_tx, in_port), |(tx, port)| {
+        let out_future = future::loop_fn((output_tx, in_port, base.breaker.clone()), |(tx, port, breaker)| {
             port.write1(1)
                 .wrap(tx)
                 .map_err(|(tx, (port, err))| (tx, port, format!("write1 {:?}", err)))
@@ -88,13 +100,20 @@ impl AudioIOFuture {
                     println!("Out err: {}", err);
                     (tx, port)
                 })
-                .map(future::Loop::Continue)
+                .map(|(tx, port)| {
+                    if breaker.test() {
+                        future::Loop::Break(())
+                    } else {
+                        future::Loop::Continue((tx, port, breaker))
+                    }
+                })
         });
         AudioIOFuture {
             client: None,
             input_tx: Some(input_tx),
             output_rx: Some(output_rx),
             future: Box::new(in_future.join(out_future).map(|((), ())| ())),
+            breaker: base.breaker.clone(),
         }
     }
     fn initialize(&mut self) {
@@ -125,6 +144,7 @@ impl AudioIOFuture {
                 outputs,
                 input_tx: self.input_tx.take().unwrap(),
                 output_rx: self.output_rx.take().unwrap(),
+                breaker: self.breaker.clone(),
             };
             self.client = Some(AsyncClient::new(client, (), processor).unwrap());
         }
@@ -144,6 +164,7 @@ struct Processor {
     outputs: Vec<Port<AudioOut>>,
     input_tx: mpsc::Sender<Frame>,
     output_rx: mpsc::Receiver<Frame>,
+    breaker: Breaker,
 }
 impl ProcessHandler for Processor {
     fn process(&mut self, client: &Client, ps: &ProcessScope) -> Control {
@@ -165,6 +186,10 @@ impl ProcessHandler for Processor {
             }
         }
 
-        Control::Continue
+        if self.breaker.test() {
+            Control::Quit
+        } else {
+            Control::Continue
+        }
     }
 }

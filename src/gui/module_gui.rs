@@ -62,6 +62,12 @@ pub struct GuiModuleWrapper<T: Module + 'static> {
     dirty: bool,
 }
 
+impl<T: Module + 'static> Drop for GuiModuleWrapper<T> {
+    fn drop(&mut self) {
+        self.module.stop();
+    }
+}
+
 impl<T: Module + 'static> GuiModuleWrapper<T> {
     pub fn new(cfg: GuiModuleConfig) -> GuiModuleWrapper<T> {
         let GuiModuleConfig {
