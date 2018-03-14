@@ -6,7 +6,7 @@ use futures::task;
 
 use module::Module;
 use modular_flow as mf;
-use future_ext::{FutureWrapExt, Breaker};
+use future_ext::{Breaker, FutureWrapExt};
 
 use jack::*;
 
@@ -58,56 +58,65 @@ impl AudioIOFuture {
         let (output_tx, output_rx) = mpsc::channel(1);
         let in_port = base.in_port.take().unwrap();
         let out_port = base.out_port.take().unwrap();
-        let in_future = future::loop_fn((input_rx, out_port, base.breaker.clone()), |(recv, port, breaker)| {
-            port.read1()
-                .wrap(recv)
-                .map_err(|(recv, (port, err))| (recv, port, format!("read1 {:?}", err)))
-                .and_then(|(recv, (port, req))| {
-                    recv.into_future()
-                        .map(|(frame, recv)| (frame.unwrap(), recv, port))
-                        .map_err(|(_err, _recv)| panic!()) // error: Never, panic impossible!
-                })
-                .and_then(|(frame, recv, port)| {
-                    port.write1(frame)
-                        .wrap(recv)
-                        .map_err(|(recv, (port, err))| (recv, port, format!("write1 {:?}", err)))
-                })
-                .recover(|(recv, port, err)| {
-                    println!("In err: {}", err);
-                    (recv, port)
-                })
-                .map(|(recv, port)| {
-                    if breaker.test() {
-                        future::Loop::Break(())
-                    } else {
-                        future::Loop::Continue((recv, port, breaker))
-                    }
-                })
-        });
-        let out_future = future::loop_fn((output_tx, in_port, base.breaker.clone()), |(tx, port, breaker)| {
-            port.write1(1)
-                .wrap(tx)
-                .map_err(|(tx, (port, err))| (tx, port, format!("write1 {:?}", err)))
-                .and_then(|(tx, port)| {
-                    port.read1()
-                        .wrap(tx)
-                        .map_err(|(tx, (port, err))| (tx, port, format!("read1 {:?}", err)))
-                })
-                .and_then(|(tx, (port, frame))| {
-                    tx.send(frame).map(|tx| (tx, port)).map_err(|err| panic!()) // error: Never, panic impossible!
-                })
-                .recover(|(tx, port, err)| {
-                    println!("Out err: {}", err);
-                    (tx, port)
-                })
-                .map(|(tx, port)| {
-                    if breaker.test() {
-                        future::Loop::Break(())
-                    } else {
-                        future::Loop::Continue((tx, port, breaker))
-                    }
-                })
-        });
+        let in_future = future::loop_fn(
+            (input_rx, out_port, base.breaker.clone()),
+            |(recv, port, breaker)| {
+                port.read1()
+                    .wrap(recv)
+                    .map_err(|(recv, (port, err))| (recv, port, format!("read1 {:?}", err)))
+                    .and_then(|(recv, (port, req))| {
+                        recv.into_future()
+                            .map(|(frame, recv)| (frame.unwrap(), recv, port))
+                            .map_err(|(_err, _recv)| panic!()) // error: Never, panic impossible!
+                    })
+                    .and_then(|(frame, recv, port)| {
+                        port.write1(frame)
+                            .wrap(recv)
+                            .map_err(|(recv, (port, err))| (recv, port, format!("write1 {:?}", err)))
+                    })
+                    .recover(|(recv, port, err)| {
+                        println!("In err: {}", err);
+                        (recv, port)
+                    })
+                    .map(|(recv, port)| {
+                        if breaker.test() {
+                            future::Loop::Break(())
+                        } else {
+                            future::Loop::Continue((recv, port, breaker))
+                        }
+                    })
+            },
+        );
+        let out_future = future::loop_fn(
+            (output_tx, in_port, base.breaker.clone()),
+            |(tx, port, breaker)| {
+                port.write1(1)
+                    .wrap(tx)
+                    .map_err(|(tx, (port, err))| (tx, port, format!("write1 {:?}", err)))
+                    .and_then(|(tx, port)| {
+                        port.read1()
+                            .wrap(tx)
+                            .map_err(|(tx, (port, err))| (tx, port, format!("read1 {:?}", err)))
+                    })
+                    .and_then(|(tx, (port, frame))| {
+                        tx.send(frame)
+                            .map(|tx| (tx, port))
+                            .map_err(|err| panic!())
+                            // error: Never, panic impossible!
+                    })
+                    .recover(|(tx, port, err)| {
+                        println!("Out err: {}", err);
+                        (tx, port)
+                    })
+                    .map(|(tx, port)| {
+                        if breaker.test() {
+                            future::Loop::Break(())
+                        } else {
+                            future::Loop::Continue((tx, port, breaker))
+                        }
+                    })
+            },
+        );
         AudioIOFuture {
             client: None,
             input_tx: Some(input_tx),

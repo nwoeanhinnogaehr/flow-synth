@@ -17,7 +17,6 @@
 #![allow(unused_variables)]
 
 extern crate crossbeam;
-#[macro_use]
 extern crate futures;
 #[macro_use]
 extern crate gfx;

@@ -33,8 +33,10 @@ impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
         "Printer"
     }
     fn start<Ex: executor::Executor>(&mut self, mut exec: Ex) {
-        exec.spawn(Box::new(future::loop_fn((self.port.clone(), self.breaker.clone()), |(port, breaker)| {
-            port.write1(1) // request 1 item
+        exec.spawn(Box::new(future::loop_fn(
+            (self.port.clone(), self.breaker.clone()),
+            |(port, breaker)| {
+                port.write1(1) // request 1 item
                 .and_then(|port| port.read1()) // read the item
                 .map(|(port, input)| {
                     println!("{:?}", input); // print it to console
@@ -51,7 +53,8 @@ impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
                         future::Loop::Continue((port, breaker))
                     }
                 })
-        }))).unwrap();
+            },
+        ))).unwrap();
     }
     fn stop(&mut self) {
         self.breaker.brake();
