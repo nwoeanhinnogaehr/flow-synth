@@ -3,14 +3,14 @@
  * become something completely different in the end.
  */
 
+use future_ext::Lock;
+
 use futures::prelude::*;
 use futures::task::Context;
 
-use crossbeam::sync::{AtomicOption, SegQueue};
-
 use std::cell::UnsafeCell;
 use std::sync::{Arc, Mutex, RwLock, Weak};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::{HashMap, VecDeque};
 use std::mem;
 use std::slice;
@@ -162,13 +162,15 @@ pub struct Port<I: 'static, O: 'static> {
     out_ty: TypeId,
     name: String,
     id: PortId,
-    buf_lock: AtomicBool,
-    buf_lock_q: SegQueue<task::Waker>,
-    buffer: UnsafeCell<VecDeque<u8>>,
-    reader_buf: AtomicOption<task::Waker>,
+    inner: Lock<PortInner>,
     connect_wait: UnsafeCell<Vec<task::Waker>>,
     edge: Mutex<Option<Weak<Port<O, I>>>>,
-    disconnect_occured: AtomicBool,
+}
+
+struct PortInner {
+    buffer: VecDeque<u8>,
+    disconnect_occured: bool,
+    read_wait: Option<task::Waker>,
 }
 
 unsafe impl<I: 'static, O: 'static> Send for Port<I, O> {}
@@ -203,13 +205,13 @@ impl<I: 'static, O: 'static> Port<I, O> {
             out_ty: TypeId::of::<O>(),
             name,
             id: PortId(graph.generate_id()),
-            buf_lock: AtomicBool::new(false),
-            buf_lock_q: SegQueue::new(),
-            buffer: UnsafeCell::new(VecDeque::new()),
-            reader_buf: AtomicOption::new(),
+            inner: Lock::new(PortInner {
+                buffer: VecDeque::new(),
+                disconnect_occured: false,
+                read_wait: None,
+            }),
             connect_wait: UnsafeCell::new(Vec::new()),
             edge: Mutex::new(None),
-            disconnect_occured: AtomicBool::new(false),
         })
     }
 
@@ -320,20 +322,15 @@ impl<I: 'static, O: 'static> Port<I, O> {
         Ok(())
     }
     fn disconnect_abort(&self) {
-        loop {
-            if self.buf_lock
-                .compare_and_swap(false, true, Ordering::Acquire) == false
-            {
-                self.disconnect_occured.store(true, Ordering::SeqCst);
-                let reader = self.reader_buf.take(Ordering::SeqCst);
-                self.buf_lock.store(false, Ordering::Release);
-                // wake any readers that were waiting, since they need to fail now
-                reader.map(|reader| reader.wake());
-                // wake anyone that was waiting for the critical section
-                self.buf_lock_q.try_pop().map(|x| x.wake());
-                break;
-            }
-        }
+        let reader;
+        {
+            let mut inner = self.inner.spin_lock();
+            inner.disconnect_occured = true;
+            reader = inner.read_wait.take();
+        };
+
+        // wake any readers that were waiting, since they need to fail now
+        reader.map(|reader| reader.wake());
     }
     fn edge(&self) -> Option<Arc<Port<O, I>>> {
         self.edge.lock().unwrap().as_ref().and_then(|x| x.upgrade())
@@ -348,6 +345,7 @@ impl<I: 'static, O: 'static> Port<I, O> {
         WriteFuture {
             port: Some(self),
             data: typed_as_bytes(data.into()),
+            other: None,
         }.fuse()
     }
     /// Write a single item. Equivalent to `write(vec![data])`
@@ -398,69 +396,47 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
     type Item = (Arc<Port<I, O>>, Box<[I]>);
     type Error = (Arc<Port<I, O>>, Error);
     fn poll(&mut self, cx: &mut Context) -> Result<Async<Self::Item>, Self::Error> {
-        let mut data = None;
         let port = self.port.as_ref().unwrap();
+        let data;
 
-        // attempt to enter critical section of buffer
-        // we try to do it twice: if we fail the first time, then we put ourselves in the queue of
-        // futures waiting to enter. then on the second time around, either we get in or we know
-        // that we will be awoken.
-        for try in 0..2 {
-            // attempt to acquire buffer lock
-            if port.buf_lock
-                .compare_and_swap(false, true, Ordering::Acquire) == false
-            {
-                // if a disconnect has occured, then we fail the future so that the task isn't left
-                // in a half finished state.
-                if port.disconnect_occured
-                    .compare_and_swap(true, false, Ordering::SeqCst)
-                {
-                    port.buf_lock.store(false, Ordering::Release); // leave critical section
-                    port.buf_lock_q.try_pop().map(|x| x.wake()); // wake someone waiting for it
-                    return Err((self.port.take().unwrap(), Error::Disconnected));
-                }
-                // the buffer is protected by buf_lock
-                let buf = unsafe { &mut *port.buffer.get() };
-                // attempt read
-                if self.n.map(|n| buf.len() < n).unwrap_or(buf.len() == 0) {
-                    // not enough data available
-                    // register to wake on next write
-                    if let Some(old_reader) = port.reader_buf.swap(cx.waker().clone(), Ordering::SeqCst) {
-                        if !cx.waker().will_wake(&old_reader) {
-                            // this might be supported in the future,
-                            // if you want multiple threads working on items from one port.
-                            // but it's probably better implemented at another level of
-                            // abstraction.
-                            // maybe we should have a list of active read futures, not waiting read
-                            // futures?
-                            panic!("multiple simultaneous reads from a port are not supported");
-                        }
+        {
+            let mut inner = match port.inner.lock().poll(cx) {
+                Ok(Async::Ready(inner)) => inner,
+                Ok(Async::Pending) => return Ok(Async::Pending),
+            };
+            // if a disconnect has occured, then we fail the future so that the task isn't left
+            // in a half finished state.
+            if inner.disconnect_occured {
+                inner.disconnect_occured = false;
+                drop(inner);
+                return Err((self.port.take().unwrap(), Error::Disconnected));
+            }
+            // the buffer is protected by buf_lock
+            let buf = &mut inner.buffer;
+            // attempt read
+            if self.n.map(|n| buf.len() < n).unwrap_or(buf.len() == 0) {
+                // not enough data available
+                // register to wake on next write
+                if let Some(old_reader) = inner.read_wait.take() {
+                    if !cx.waker().will_wake(&old_reader) {
+                        // this might be supported in the future,
+                        // if you want multiple threads working on items from one port.
+                        // but it's probably better implemented at another level of
+                        // abstraction.
+                        // maybe we should have a list of active read futures, not waiting read
+                        // futures?
+                        panic!("multiple simultaneous reads from a port are not supported");
                     }
-                    data = None;
-                } else {
-                    // move data out of queue
-                    let n = self.n.unwrap_or(buf.len());
-                    let iter = buf.drain(..n);
-                    data = Some(iter.collect::<Vec<_>>().into());
                 }
-                // leave critical section
-                port.buf_lock.store(false, Ordering::Release);
-                break;
+                inner.read_wait = Some(cx.waker().clone());
+                data = None;
             } else {
-                // couldn't lock buffer
-                if try == 0 {
-                    // first time around, register this future to be notified upon critical section exit
-                    port.buf_lock_q.push(cx.waker().clone());
-                } else {
-                    // on the second try, the above line has already run so we can yield
-                    return Ok(Async::Pending);
-                }
+                // move data out of queue
+                let n = self.n.unwrap_or(buf.len());
+                let iter = buf.drain(..n);
+                data = Some(iter.collect::<Vec<_>>().into());
             }
         }
-
-        // now that we are out of the critical section,
-        // wake a future that was waiting for it, if any
-        port.buf_lock_q.try_pop().map(|x| x.wake());
 
         if let Some(data) = data {
             Ok(Async::Ready((
@@ -468,7 +444,7 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
                 bytes_as_typed(data),
             )))
         } else {
-            // the waker would have been put into reader_buf if we get here
+            // the waker would have been put into inner.read_wait if we get here
             Ok(Async::Pending)
         }
     }
@@ -477,54 +453,43 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
 pub struct WriteFuture<I: 'static, O: 'static> {
     port: Option<Arc<Port<I, O>>>,
     data: Box<[u8]>,
+    other: Option<Arc<Port<O, I>>>,
 }
 
 impl<I: 'static, O: 'static> Future for WriteFuture<I, O> {
     type Item = Arc<Port<I, O>>;
     type Error = (Arc<Port<I, O>>, Error);
     fn poll(&mut self, cx: &mut Context) -> Result<Async<Self::Item>, Self::Error> {
-        let port = self.port.as_ref().unwrap();
-        let other = {
-            let edge = port.edge.lock().unwrap().as_ref().and_then(|x| x.upgrade());
-            match edge {
-                Some(other) => other,
-                None => {
-                    // register to wake on connect
-                    let connect_wait = unsafe { &mut *port.connect_wait.get() };
-                    connect_wait.push(cx.waker().clone());
-                    return Ok(Async::Pending);
+        if self.other.is_none() {
+            let port = self.port.as_ref().unwrap();
+            self.other = Some({
+                let edge = port.edge.lock().unwrap().as_ref().and_then(|x| x.upgrade());
+                match edge {
+                    Some(other) => other,
+                    None => {
+                        // register to wake on connect
+                        let connect_wait = unsafe { &mut *port.connect_wait.get() };
+                        connect_wait.push(cx.waker().clone());
+                        return Ok(Async::Pending);
+                    }
                 }
-            }
-        };
+            });
+        }
+        let other = self.other.as_ref().unwrap();
 
-        for try in 0..2 {
-            // attempt to enter critical section of buffer
-            if other
-                .buf_lock
-                .compare_and_swap(false, true, Ordering::Acquire) == false
-            {
-                let buf = unsafe { &mut *other.buffer.get() };
-                buf.extend(self.data.into_iter());
-
-                // leave critical section
-                other.buf_lock.store(false, Ordering::Release);
-                break;
-            } else {
-                // couldn't lock buffer
-                // register this future to be notified upon critical section exit
-                if try == 0 {
-                    other.buf_lock_q.push(cx.waker().clone());
-                } else {
-                    return Ok(Async::Pending);
-                }
-            }
+        let reader;
+        {
+            let mut inner = match other.inner.lock().poll(cx) {
+                Ok(Async::Ready(inner)) => inner,
+                Ok(Async::Pending) => return Ok(Async::Pending),
+            };
+            let buf = &mut inner.buffer;
+            buf.extend(self.data.into_iter());
+            reader = inner.read_wait.take();
         }
 
-        // wake a future that was waiting for the critical section, if any
-        other.buf_lock_q.try_pop().map(|x| x.wake());
-
         // wake any readers that are waiting for a write here
-        other.reader_buf.take(Ordering::SeqCst).map(|x| x.wake());
+        reader.map(|x| x.wake());
 
         Ok(Async::Ready(self.port.take().unwrap()))
     }
