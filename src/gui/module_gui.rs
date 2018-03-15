@@ -1,6 +1,5 @@
 use gui::{button::*, component::*, connect::*, event::*, geom::*, render::*};
 use module::*;
-use modular_flow as mf;
 
 use futures::executor::ThreadPool;
 
@@ -11,10 +10,10 @@ use std::marker::PhantomData;
 use gfx_device_gl as gl;
 
 pub struct GuiModuleConfig {
-    pub graph: Arc<mf::Graph>,
+    pub graph: Arc<flow::Graph>,
     pub ctx: RenderContext,
     pub bounds: Box3,
-    pub jack_ctx: Rc<JackContext<Arc<mf::OpaquePort>>>,
+    pub jack_ctx: Rc<JackContext<Arc<flow::OpaquePort>>>,
     pub executor: ThreadPool,
 }
 pub trait GuiModuleFactory {
@@ -43,7 +42,7 @@ impl<T: Module + 'static> GuiModuleFactory for BasicGuiModuleFactory<T> {
 }
 
 pub trait GuiModule: GuiComponent<GuiModuleUpdate> {
-    fn node(&self) -> Arc<mf::Node>;
+    fn node(&self) -> Arc<flow::Node>;
 }
 
 const TITLE_BAR_HEIGHT: f32 = 24.0;
@@ -51,12 +50,12 @@ const BORDER_SIZE: f32 = 1.0;
 
 pub struct GuiModuleWrapper<T: Module + 'static> {
     module: T,
-    node: Arc<mf::Node>,
+    node: Arc<flow::Node>,
 
     target: TextureTarget,
 
     delete_button: Button,
-    jacks: Vec<Rc<Jack<Arc<mf::OpaquePort>>>>,
+    jacks: Vec<Rc<Jack<Arc<flow::OpaquePort>>>>,
     bounds: Box3,
     drag: Option<Pt2>,
     dirty: bool,
@@ -162,7 +161,7 @@ impl<T: Module + 'static> GuiModuleWrapper<T> {
 }
 
 impl<T: Module> GuiModule for GuiModuleWrapper<T> {
-    fn node(&self) -> Arc<mf::Node> {
+    fn node(&self) -> Arc<flow::Node> {
         self.node.clone()
     }
 }

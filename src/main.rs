@@ -28,7 +28,6 @@ extern crate jack;
 extern crate num;
 
 mod module;
-mod modular_flow;
 mod gui;
 mod future_ext;
 

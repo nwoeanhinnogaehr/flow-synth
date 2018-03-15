@@ -2,8 +2,7 @@ use futures::prelude::*;
 use futures::executor;
 use futures::future;
 
-use module::Module;
-use modular_flow as mf;
+use module::{Module, flow};
 use future_ext::Breaker;
 
 use num::{One, Zero};
@@ -14,13 +13,13 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 
 pub struct Printer<T: Debug + Send + Sync + 'static> {
-    ifc: Arc<mf::Interface>,
-    port: Arc<mf::Port<T, usize>>,
+    ifc: Arc<flow::Interface>,
+    port: Arc<flow::Port<T, usize>>,
     breaker: Breaker,
     _t: PhantomData<T>,
 }
 impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
-    fn new(ifc: Arc<mf::Interface>) -> Printer<T> {
+    fn new(ifc: Arc<flow::Interface>) -> Printer<T> {
         let port = ifc.add_port::<T, usize>("Input".into());
         Printer {
             ifc,
@@ -59,19 +58,19 @@ impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
     fn stop(&mut self) {
         self.breaker.brake();
     }
-    fn ports(&self) -> Vec<Arc<mf::OpaquePort>> {
+    fn ports(&self) -> Vec<Arc<flow::OpaquePort>> {
         self.ifc.ports()
     }
 }
 
 pub struct Counter<T: Copy + One + Zero + Add + Send + 'static> {
-    ifc: Arc<mf::Interface>,
-    port: Arc<mf::Port<usize, T>>,
+    ifc: Arc<flow::Interface>,
+    port: Arc<flow::Port<usize, T>>,
     breaker: Breaker,
     _t: PhantomData<T>,
 }
 impl<T: Copy + One + Zero + Add + Send + 'static> Module for Counter<T> {
-    fn new(ifc: Arc<mf::Interface>) -> Counter<T> {
+    fn new(ifc: Arc<flow::Interface>) -> Counter<T> {
         let port = ifc.add_port::<usize, T>("Output".into());
         Counter {
             ifc,
@@ -116,7 +115,7 @@ impl<T: Copy + One + Zero + Add + Send + 'static> Module for Counter<T> {
     fn stop(&mut self) {
         self.breaker.brake();
     }
-    fn ports(&self) -> Vec<Arc<mf::OpaquePort>> {
+    fn ports(&self) -> Vec<Arc<flow::OpaquePort>> {
         self.ifc.ports()
     }
 }

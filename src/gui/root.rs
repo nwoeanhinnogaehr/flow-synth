@@ -1,7 +1,7 @@
 //! Root component that holds the application
 
 use gui::{component::*, connect::*, event::*, geom::*, menu::*, module_gui::*, render::*};
-use modular_flow as mf;
+use module::flow;
 
 use gfx_device_gl as gl;
 use futures::executor::ThreadPool;
@@ -11,21 +11,21 @@ use std::rc::Rc;
 use std::cmp::Ordering;
 
 pub struct Root {
-    graph: Arc<mf::Graph>,
+    graph: Arc<flow::Graph>,
     bounds: Box3,
 
     ctx: RenderContext,
     modules: Vec<Box<GuiModule>>,
     module_types: Vec<Box<GuiModuleFactory>>,
     context_menu: Option<MenuView>,
-    jack_ctx: Rc<JackContext<Arc<mf::OpaquePort>>>,
+    jack_ctx: Rc<JackContext<Arc<flow::OpaquePort>>>,
     executor: ThreadPool,
 }
 
 impl Root {
     pub fn new(ctx: RenderContext, bounds: Box3) -> Root {
         Root {
-            graph: mf::Graph::new(),
+            graph: flow::Graph::new(),
             bounds,
             modules: Vec::new(),
             module_types: load_metamodules(),
@@ -37,7 +37,7 @@ impl Root {
         }
     }
 
-    fn new_module(&mut self, name: &str, rect: Rect2) -> Result<mf::NodeId, ()> {
+    fn new_module(&mut self, name: &str, rect: Rect2) -> Result<flow::NodeId, ()> {
         // dummy z, overwritten by move_to_front
         if let Some(factory) = self.module_types.iter_mut().find(|ty| ty.name() == name) {
             let bounds = Box3::new(rect.pos.with_z(0.0), rect.size.with_z(0.0));
@@ -77,7 +77,7 @@ impl Root {
         a_z.partial_cmp(&b_z).unwrap()
     }
 
-    fn move_to_front(&mut self, id: mf::NodeId) {
+    fn move_to_front(&mut self, id: flow::NodeId) {
         self.modules.sort_by(|a, b| {
             // force given id to front
             if a.node().id() == id {

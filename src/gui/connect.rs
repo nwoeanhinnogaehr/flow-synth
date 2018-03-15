@@ -1,5 +1,5 @@
 use gui::{component::*, event::*, geom::*, render::*};
-use modular_flow as mf;
+use module::flow;
 
 use gfx_device_gl as gl;
 
@@ -13,15 +13,15 @@ pub trait JackBackend {
     fn disconnect(&self);
 }
 
-impl JackBackend for Arc<mf::OpaquePort> {
+impl JackBackend for Arc<flow::OpaquePort> {
     fn label(&self) -> &str {
         self.name()
     }
     fn connect(&self, other: &Self) {
-        mf::OpaquePort::connect(self, other).unwrap();
+        flow::OpaquePort::connect(self, other).unwrap();
     }
     fn disconnect(&self) {
-        mf::OpaquePort::disconnect(self).unwrap();
+        flow::OpaquePort::disconnect(self).unwrap();
     }
 }
 

@@ -4,8 +4,7 @@ use futures::future;
 use futures::channel::mpsc;
 use futures::task;
 
-use module::Module;
-use modular_flow as mf;
+use module::{Module, flow};
 use future_ext::{Breaker, FutureWrapExt};
 
 use jack::*;
@@ -14,13 +13,13 @@ use std::sync::Arc;
 
 type Frame = Vec<Vec<f32>>;
 pub struct AudioIO {
-    ifc: Arc<mf::Interface>,
-    in_port: Option<Arc<mf::Port<Frame, usize>>>,
-    out_port: Option<Arc<mf::Port<usize, Frame>>>,
+    ifc: Arc<flow::Interface>,
+    in_port: Option<Arc<flow::Port<Frame, usize>>>,
+    out_port: Option<Arc<flow::Port<usize, Frame>>>,
     breaker: Breaker,
 }
 impl Module for AudioIO {
-    fn new(ifc: Arc<mf::Interface>) -> AudioIO {
+    fn new(ifc: Arc<flow::Interface>) -> AudioIO {
         let in_port = Some(ifc.add_port("Input".into()));
         let out_port = Some(ifc.add_port("Output".into()));
         AudioIO {
@@ -39,7 +38,7 @@ impl Module for AudioIO {
     fn stop(&mut self) {
         self.breaker.brake();
     }
-    fn ports(&self) -> Vec<Arc<mf::OpaquePort>> {
+    fn ports(&self) -> Vec<Arc<flow::OpaquePort>> {
         self.ifc.ports()
     }
 }
