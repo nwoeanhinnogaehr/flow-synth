@@ -156,10 +156,14 @@ impl Interface {
 ///
 /// TODO think about interactions/problems with multiple graphs
 pub struct Port<I: 'static, O: 'static> {
+    // it is UNSAFE to use the type parameters I and O to store real data here
+    // because of how OpaquePort is implemented!
+    // only PhantomData is ok!
     _in: PhantomData<I>,
     _out: PhantomData<O>,
     in_ty: TypeId,
     out_ty: TypeId,
+
     name: String,
     id: PortId,
     inner: Lock<PortInner>,
