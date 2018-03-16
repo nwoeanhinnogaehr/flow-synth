@@ -8,8 +8,7 @@ use future_ext::Lock;
 use futures::prelude::*;
 use futures::task::Context;
 
-use std::cell::UnsafeCell;
-use std::sync::{Arc, Mutex, RwLock, Weak};
+use std::sync::{Arc, RwLock, Weak};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::{HashMap, VecDeque};
 use std::mem;
@@ -167,14 +166,18 @@ pub struct Port<I: 'static, O: 'static> {
     name: String,
     id: PortId,
     inner: Lock<PortInner>,
-    connect_wait: UnsafeCell<Vec<task::Waker>>,
-    edge: Mutex<Option<Weak<Port<O, I>>>>,
+    edge: Lock<Edge<I, O>>,
 }
 
 struct PortInner {
     buffer: VecDeque<u8>,
     disconnect_occured: bool,
-    read_wait: Option<task::Waker>,
+    read_wait: Vec<task::Waker>,
+}
+
+struct Edge<I: 'static, O: 'static> {
+    other: Option<Weak<Port<O, I>>>,
+    connect_wait: Vec<task::Waker>,
 }
 
 unsafe impl<I: 'static, O: 'static> Send for Port<I, O> {}
@@ -212,10 +215,12 @@ impl<I: 'static, O: 'static> Port<I, O> {
             inner: Lock::new(PortInner {
                 buffer: VecDeque::new(),
                 disconnect_occured: false,
-                read_wait: None,
+                read_wait: Vec::new(),
             }),
-            connect_wait: UnsafeCell::new(Vec::new()),
-            edge: Mutex::new(None),
+            edge: Lock::new(Edge {
+                other: None,
+                connect_wait: Vec::new(),
+            }),
         })
     }
 
@@ -251,22 +256,20 @@ impl<I: 'static, O: 'static> Port<I, O> {
             } else {
                 (other_untyped, self_untyped)
             };
-            let mut a_edge = a.edge.lock().unwrap();
-            let mut b_edge = b.edge.lock().unwrap();
-            if a_edge.as_ref().and_then(|x| x.upgrade()).is_some()
-                || b_edge.as_ref().and_then(|x| x.upgrade()).is_some()
+            let mut a_edge = a.edge.spin_lock();
+            let mut b_edge = b.edge.spin_lock();
+            if a_edge.other.as_ref().and_then(|x| x.upgrade()).is_some()
+                || b_edge.other.as_ref().and_then(|x| x.upgrade()).is_some()
             {
                 return Err(ConnectError::AlreadyConnected);
             }
-            *a_edge = Some(Arc::downgrade(&b));
-            *b_edge = Some(Arc::downgrade(&a));
+            a_edge.other = Some(Arc::downgrade(&b));
+            b_edge.other = Some(Arc::downgrade(&a));
 
             // UnsafeCells protected by edge mutex
-            let self_connect_wait = unsafe { &mut *self.connect_wait.get() };
-            let other_connect_wait = unsafe { &mut *other.connect_wait.get() };
-            for waker in self_connect_wait
+            for waker in a_edge.connect_wait
                 .drain(..)
-                .chain(other_connect_wait.drain(..))
+                .chain(b_edge.connect_wait.drain(..))
             {
                 waker.wake();
             }
@@ -290,17 +293,17 @@ impl<I: 'static, O: 'static> Port<I, O> {
                 // self edges are currently not supported
                 unimplemented!();
             } else {
-                let (mut self_edge, mut other_edge);
+                let (mut a_edge, mut b_edge);
                 if self.id().0 < other.id().0 {
-                    self_edge = self.edge.lock().unwrap();
-                    other_edge = other.edge.lock().unwrap();
+                    a_edge = self.edge.spin_lock();
+                    b_edge = other.edge.spin_lock();
                 } else {
-                    other_edge = other.edge.lock().unwrap();
-                    self_edge = self.edge.lock().unwrap();
+                    b_edge = other.edge.spin_lock();
+                    a_edge = self.edge.spin_lock();
                 };
                 // check that the port this one is connected to hasn't changed in between
                 // finding `other` and locking the edges
-                if !self_edge
+                if !a_edge.other
                     .as_ref()
                     .and_then(|x| x.upgrade())
                     .map(|self_other| Arc::ptr_eq(other, &self_other))
@@ -310,11 +313,14 @@ impl<I: 'static, O: 'static> Port<I, O> {
                 }
                 // other should definitely be connected to self if we made it here
                 assert!(Arc::ptr_eq(
-                    &other_edge.as_ref().unwrap().upgrade().unwrap(),
+                    &b_edge.other.as_ref().unwrap().upgrade().unwrap(),
                     self
                 ));
-                *self_edge = None;
-                *other_edge = None;
+                a_edge.other = None;
+                b_edge.other = None;
+
+                drop(a_edge);
+                drop(b_edge);
 
                 // fail any waiting readers so that the task isn't left half finished across a
                 // disconnect/reconnect
@@ -326,18 +332,20 @@ impl<I: 'static, O: 'static> Port<I, O> {
         Ok(())
     }
     fn disconnect_abort(&self) {
-        let reader;
+        let readers;
         {
             let mut inner = self.inner.spin_lock();
             inner.disconnect_occured = true;
-            reader = inner.read_wait.take();
+            readers = inner.read_wait.drain(..).collect::<Vec<_>>();
         };
 
         // wake any readers that were waiting, since they need to fail now
-        reader.map(|reader| reader.wake());
+        for reader in readers {
+            reader.wake();
+        }
     }
     fn edge(&self) -> Option<Arc<Port<O, I>>> {
-        self.edge.lock().unwrap().as_ref().and_then(|x| x.upgrade())
+        self.edge.spin_lock().other.as_ref().and_then(|x| x.upgrade())
     }
 
     /// Returns a `Future` which writes a `Vec` of data to a port, returning the port.
@@ -421,18 +429,7 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
             if self.n.map(|n| buf.len() < n).unwrap_or(buf.len() == 0) {
                 // not enough data available
                 // register to wake on next write
-                if let Some(old_reader) = inner.read_wait.take() {
-                    if !cx.waker().will_wake(&old_reader) {
-                        // this might be supported in the future,
-                        // if you want multiple threads working on items from one port.
-                        // but it's probably better implemented at another level of
-                        // abstraction.
-                        // maybe we should have a list of active read futures, not waiting read
-                        // futures?
-                        panic!("multiple simultaneous reads from a port are not supported");
-                    }
-                }
-                inner.read_wait = Some(cx.waker().clone());
+                inner.read_wait.push(cx.waker().clone());
                 data = None;
             } else {
                 // move data out of queue
@@ -467,13 +464,15 @@ impl<I: 'static, O: 'static> Future for WriteFuture<I, O> {
         if self.other.is_none() {
             let port = self.port.as_ref().unwrap();
             self.other = Some({
-                let edge = port.edge.lock().unwrap().as_ref().and_then(|x| x.upgrade());
-                match edge {
+                let mut edge = match port.edge.lock().poll(cx) {
+                    Ok(Async::Ready(edge)) => edge,
+                    Ok(Async::Pending) => return Ok(Async::Pending),
+                };
+                match edge.other.as_ref().and_then(|x| x.upgrade()) {
                     Some(other) => other,
                     None => {
                         // register to wake on connect
-                        let connect_wait = unsafe { &mut *port.connect_wait.get() };
-                        connect_wait.push(cx.waker().clone());
+                        edge.connect_wait.push(cx.waker().clone());
                         return Ok(Async::Pending);
                     }
                 }
@@ -481,7 +480,7 @@ impl<I: 'static, O: 'static> Future for WriteFuture<I, O> {
         }
         let other = self.other.as_ref().unwrap();
 
-        let reader;
+        let readers;
         {
             let mut inner = match other.inner.lock().poll(cx) {
                 Ok(Async::Ready(inner)) => inner,
@@ -489,11 +488,13 @@ impl<I: 'static, O: 'static> Future for WriteFuture<I, O> {
             };
             let buf = &mut inner.buffer;
             buf.extend(self.data.into_iter());
-            reader = inner.read_wait.take();
+            readers = inner.read_wait.drain(..).collect::<Vec<_>>();
         }
 
         // wake any readers that are waiting for a write here
-        reader.map(|x| x.wake());
+        for reader in readers {
+            reader.wake();
+        }
 
         Ok(Async::Ready(self.port.take().unwrap()))
     }
