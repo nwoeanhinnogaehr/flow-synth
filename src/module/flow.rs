@@ -415,6 +415,7 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
             let mut inner = match port.inner.lock().poll(cx) {
                 Ok(Async::Ready(inner)) => inner,
                 Ok(Async::Pending) => return Ok(Async::Pending),
+                Err(_) => unreachable!(),
             };
             // if a disconnect has occured, then we fail the future so that the task isn't left
             // in a half finished state.
@@ -467,6 +468,7 @@ impl<I: 'static, O: 'static> Future for WriteFuture<I, O> {
                 let mut edge = match port.edge.lock().poll(cx) {
                     Ok(Async::Ready(edge)) => edge,
                     Ok(Async::Pending) => return Ok(Async::Pending),
+                    Err(_) => unreachable!(),
                 };
                 match edge.other.as_ref().and_then(|x| x.upgrade()) {
                     Some(other) => other,
@@ -485,6 +487,7 @@ impl<I: 'static, O: 'static> Future for WriteFuture<I, O> {
             let mut inner = match other.inner.lock().poll(cx) {
                 Ok(Async::Ready(inner)) => inner,
                 Ok(Async::Pending) => return Ok(Async::Pending),
+                Err(_) => unreachable!(),
             };
             let buf = &mut inner.buffer;
             buf.extend(self.data.into_iter());
