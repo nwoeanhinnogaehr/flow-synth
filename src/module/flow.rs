@@ -236,11 +236,15 @@ impl<I: 'static, O: 'static> Port<I, O> {
     pub fn name(&self) -> &str {
         &self.name
     }
+    /// Determines if two ports can be connected to each other.
+    pub fn can_connect(self: &Arc<Port<I, O>>, other: &Arc<Port<O, I>>) -> bool {
+        self.id() != other.id() && self.in_ty == other.out_ty && self.out_ty == other.in_ty
+    }
     /// Connect this port to another. If either port is opaque and the ports have unmatched
     /// underlying types, this fails with ConnectError::TypeMismatch. Fails with
     /// ConnectError::AlreadyConnected if either port is already connected.
     pub fn connect(self: &Arc<Port<I, O>>, other: &Arc<Port<O, I>>) -> Result<(), ConnectError> {
-        if self.in_ty != other.out_ty || self.out_ty != other.in_ty {
+        if !self.can_connect(other) {
             return Err(ConnectError::TypeMismatch);
         }
         if self.id() == other.id() {

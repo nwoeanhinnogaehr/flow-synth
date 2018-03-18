@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 pub trait JackBackend {
     fn label(&self) -> &str;
+    fn can_connect(&self, other: &Self) -> bool;
     fn connect(&self, other: &Self);
     fn disconnect(&self);
 }
@@ -16,6 +17,9 @@ pub trait JackBackend {
 impl JackBackend for Arc<flow::OpaquePort> {
     fn label(&self) -> &str {
         self.name()
+    }
+    fn can_connect(&self, other: &Self) -> bool {
+        flow::OpaquePort::can_connect(self, other)
     }
     fn connect(&self, other: &Self) {
         flow::OpaquePort::connect(self, other).unwrap();
@@ -150,7 +154,7 @@ impl<T: JackBackend> GuiComponent for Rc<Jack<T>> {
                         .as_mut()
                         .and_then(|wip| wip.upgrade().map(|ep| (wip, ep)))
                     {
-                        if !Rc::ptr_eq(endpoint, self) {
+                        if self.backend.can_connect(&endpoint.backend) {
                             // connection in progress:
                             // click establishes new connection
 
