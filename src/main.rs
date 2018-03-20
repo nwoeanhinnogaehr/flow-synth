@@ -26,6 +26,7 @@ extern crate gfx_window_glutin;
 extern crate glutin;
 extern crate jack;
 extern crate num;
+extern crate ndarray;
 
 mod module;
 mod gui;

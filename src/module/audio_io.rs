@@ -9,9 +9,13 @@ use future_ext::{Breaker, FutureWrapExt};
 
 use jack::*;
 
+use ndarray::{Array, Array2, Axis};
 use std::sync::Arc;
 
-type Frame = Vec<Vec<f32>>;
+struct Frame {
+    pub rate: f32,
+    pub data: Array2<f32>,
+}
 pub struct AudioIO {
     ifc: Arc<flow::Interface>,
     in_port: Option<Arc<flow::Port<Frame, usize>>>,
@@ -176,15 +180,23 @@ struct Processor {
 }
 impl ProcessHandler for Processor {
     fn process(&mut self, client: &Client, ps: &ProcessScope) -> Control {
-        let in_frame = self.inputs
+        let in_frame = Frame {
+            rate: client.sample_rate() as f32,
+            data: Array::from_iter(self.inputs
             .iter()
-            .map(|input| input.as_slice(ps).to_vec())
-            .collect();
+            .flat_map(|input| input.as_slice(ps).to_vec()))
+            .into_shape((self.inputs.len(), client.buffer_size() as usize)).unwrap().reversed_axes(),
+        };
+
         // ignore errors, prefer to drop the frame
-        let _ = self.input_tx.try_send(in_frame);
         if let Ok(frame) = self.output_rx.try_next() {
-            for (output, buffer) in self.outputs.iter_mut().zip(frame.unwrap().iter()) {
-                output.as_mut_slice(ps).clone_from_slice(&buffer);
+            let frame = frame.unwrap();
+            assert!(frame.rate == in_frame.rate);
+            assert!(frame.data.shape() == in_frame.data.shape());
+            for (output, buffer) in self.outputs.iter_mut().zip(frame.data.axis_iter(Axis(1))) {
+                for (sample_out, sample) in output.as_mut_slice(ps).iter_mut().zip(buffer.iter()) {
+                    *sample_out = *sample;
+                }
             }
         } else {
             for output in &mut self.outputs {
@@ -193,6 +205,7 @@ impl ProcessHandler for Processor {
                 }
             }
         }
+        let _ = self.input_tx.try_send(in_frame);
 
         if self.breaker.test() {
             Control::Quit

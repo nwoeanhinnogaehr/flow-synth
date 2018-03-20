@@ -13,3 +13,4 @@ num = "*"
 futures = { git = "https://github.com/rust-lang-nursery/futures-rs" }
 crossbeam = "*"
 jack = "*"
+ndarray = "*"
