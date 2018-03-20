@@ -10,6 +10,7 @@ use future_ext::{Breaker, FutureWrapExt};
 use jack::*;
 
 use ndarray::{Array, Array2, Axis};
+
 use std::sync::Arc;
 
 struct Frame {
@@ -18,8 +19,8 @@ struct Frame {
 }
 pub struct AudioIO {
     ifc: Arc<flow::Interface>,
-    in_port: Option<Arc<flow::Port<Frame, usize>>>,
-    out_port: Option<Arc<flow::Port<usize, Frame>>>,
+    in_port: Option<Arc<flow::Port<Frame, ()>>>,
+    out_port: Option<Arc<flow::Port<(), Frame>>>,
     breaker: Breaker,
 }
 impl Module for AudioIO {
@@ -67,7 +68,7 @@ impl AudioIOFuture {
                 port.read1()
                     .wrap(recv)
                     .map_err(|(recv, (port, err))| (recv, port, format!("read1 {:?}", err)))
-                    .and_then(|(recv, (port, req))| {
+                    .and_then(|(recv, (port, _req))| {
                         recv.into_future()
                             .map(|(frame, recv)| (frame.unwrap(), recv, port))
                             .map_err(|(_err, _recv)| panic!()) // error: Never, panic impossible!
@@ -93,7 +94,7 @@ impl AudioIOFuture {
         let out_future = future::loop_fn(
             (output_tx, in_port, base.breaker.clone()),
             |(tx, port, breaker)| {
-                port.write1(1)
+                port.write1(())
                     .wrap(tx)
                     .map_err(|(tx, (port, err))| (tx, port, format!("write1 {:?}", err)))
                     .and_then(|(tx, port)| {

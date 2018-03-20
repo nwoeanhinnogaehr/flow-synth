@@ -171,6 +171,7 @@ pub struct Port<I: 'static, O: 'static> {
 
 struct PortInner {
     buffer: VecDeque<u8>,
+    buffer_size: usize,
     disconnect_occured: bool,
     read_wait: Vec<task::Waker>,
 }
@@ -203,8 +204,6 @@ impl OpaquePort {
 
 impl<I: 'static, O: 'static> Port<I, O> {
     fn new(graph: &Graph, name: String) -> Arc<Port<I, O>> {
-        assert!(mem::size_of::<I>() != 0);
-        assert!(mem::size_of::<O>() != 0);
         Arc::new(Port {
             _in: PhantomData,
             _out: PhantomData,
@@ -214,6 +213,7 @@ impl<I: 'static, O: 'static> Port<I, O> {
             id: PortId(graph.generate_id()),
             inner: Lock::new(PortInner {
                 buffer: VecDeque::new(),
+                buffer_size: 0,
                 disconnect_occured: false,
                 read_wait: Vec::new(),
             }),
@@ -358,10 +358,12 @@ impl<I: 'static, O: 'static> Port<I, O> {
         self: Arc<Port<I, O>>,
         data: Vec<O>,
     ) -> impl Future<Item = Arc<Port<I, O>>, Error = (Arc<Port<I, O>>, Error)> {
+        let n_bytes = data.len() * mem::size_of::<O>();
         WriteFuture {
             port: Some(self),
-            data: typed_as_bytes(data.into()),
             other: None,
+            n: data.len(),
+            data: typed_as_bytes(data.into(), n_bytes),
         }.fuse()
     }
     /// Write a single item. Equivalent to `write(vec![data])`
@@ -391,7 +393,7 @@ impl<I: 'static, O: 'static> Port<I, O> {
     ) -> impl Future<Item = (Arc<Port<I, O>>, Box<[I]>), Error = (Arc<Port<I, O>>, Error)> {
         ReadFuture {
             port: Some(self),
-            n: Some(n * mem::size_of::<I>()),
+            n: Some(n),
         }.fuse()
     }
     /// Equivalent to `read_n(1)`, but returns the item itself instead of a singleton array
@@ -414,6 +416,7 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
     fn poll(&mut self, cx: &mut Context) -> Result<Async<Self::Item>, Self::Error> {
         let port = self.port.as_ref().unwrap();
         let data;
+        let size;
 
         {
             let mut inner = match port.inner.lock().poll(cx) {
@@ -429,25 +432,27 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
                 return Err((self.port.take().unwrap(), Error::Disconnected));
             }
             // the buffer is protected by buf_lock
+            size = inner.buffer_size;
             let buf = &mut inner.buffer;
             // attempt read
-            if self.n.map(|n| buf.len() < n).unwrap_or(buf.len() == 0) {
+            if self.n.map(|n| size < n).unwrap_or(size == 0) {
                 // not enough data available
                 // register to wake on next write
                 inner.read_wait.push(cx.waker().clone());
                 data = None;
             } else {
                 // move data out of queue
-                let n = self.n.unwrap_or(buf.len());
-                let iter = buf.drain(..n);
+                let n = self.n.unwrap_or(size);
+                let iter = buf.drain(..(n * mem::size_of::<I>()));
                 data = Some(iter.collect::<Vec<_>>().into());
+                inner.buffer_size -= n;
             }
         }
 
         if let Some(data) = data {
             Ok(Async::Ready((
                 self.port.take().unwrap(),
-                bytes_as_typed(data),
+                bytes_as_typed(data, size),
             )))
         } else {
             // the waker would have been put into inner.read_wait if we get here
@@ -460,6 +465,7 @@ pub struct WriteFuture<I: 'static, O: 'static> {
     port: Option<Arc<Port<I, O>>>,
     data: Box<[u8]>,
     other: Option<Arc<Port<O, I>>>,
+    n: usize,
 }
 
 impl<I: 'static, O: 'static> Future for WriteFuture<I, O> {
@@ -495,6 +501,7 @@ impl<I: 'static, O: 'static> Future for WriteFuture<I, O> {
             };
             let buf = &mut inner.buffer;
             buf.extend(self.data.into_iter());
+            inner.buffer_size += self.n;
             readers = inner.read_wait.drain(..).collect::<Vec<_>>();
         }
 
@@ -524,15 +531,14 @@ pub enum Error {
     Disconnected,
 }
 
-fn typed_as_bytes<T: 'static>(data: Box<[T]>) -> Box<[u8]> {
-    let size = data.len() * mem::size_of::<T>();
+fn typed_as_bytes<T: 'static>(data: Box<[T]>, size: usize) -> Box<[u8]> {
+    assert!(mem::size_of::<T>() == 0 || size == data.len() * mem::size_of::<T>());
     let raw = Box::into_raw(data);
     unsafe { Box::from_raw(slice::from_raw_parts_mut(raw as *mut u8, size)) }
 }
 
-fn bytes_as_typed<T: 'static>(data: Box<[u8]>) -> Box<[T]> {
-    assert_eq!(data.len() % mem::size_of::<T>(), 0); // ensure alignment
-    let size = data.len() / mem::size_of::<T>();
+fn bytes_as_typed<T: 'static>(data: Box<[u8]>, size: usize) -> Box<[T]> {
+    assert!(mem::size_of::<T>() == 0 || data.len() % mem::size_of::<T>() == 0); // ensure alignment
     let raw = Box::into_raw(data);
     unsafe { Box::from_raw(slice::from_raw_parts_mut(raw as *mut T, size)) }
 }
