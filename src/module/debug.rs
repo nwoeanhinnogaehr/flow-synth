@@ -2,7 +2,7 @@ use futures::prelude::*;
 use futures::executor;
 use futures::future;
 
-use module::{Module, flow};
+use module::{flow, Module};
 use future_ext::Breaker;
 
 use num::{One, Zero};

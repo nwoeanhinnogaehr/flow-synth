@@ -85,7 +85,7 @@ impl<T> Lock<T> {
         }
     }
     pub fn spin_lock(&self) -> LockGuard<T> {
-        while self.flag.compare_and_swap(false, true, Ordering::Acquire) { }
+        while self.flag.compare_and_swap(false, true, Ordering::Acquire) {}
         LockGuard {
             lock: self,
         }
@@ -100,7 +100,10 @@ impl<'a, T: 'a> Future for LockFuture<'a, T> {
 
     fn poll(&mut self, cx: &mut task::Context) -> Poll<Self::Item, Self::Error> {
         for try in 0..2 {
-            if self.lock.flag.compare_and_swap(false, true, Ordering::Acquire) {
+            if self.lock
+                .flag
+                .compare_and_swap(false, true, Ordering::Acquire)
+            {
                 // if we failed to lock, register this future to be notified upon next release and
                 // try again in case it gets unlocked in between trying to lock and pushing to the
                 // queue. tuning the number of tries before pushing to the queue may marginally
@@ -111,11 +114,11 @@ impl<'a, T: 'a> Future for LockFuture<'a, T> {
                     return Ok(Async::Pending);
                 }
             } else {
-                break
+                break;
             }
         }
         Ok(Async::Ready(LockGuard {
-            lock: self.lock
+            lock: self.lock,
         }))
     }
 }

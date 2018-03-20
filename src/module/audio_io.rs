@@ -4,7 +4,7 @@ use futures::future;
 use futures::channel::mpsc;
 use futures::task;
 
-use module::{Module, flow};
+use module::{flow, Module};
 use future_ext::{Breaker, FutureWrapExt};
 
 use jack::*;
@@ -103,10 +103,8 @@ impl AudioIOFuture {
                             .map_err(|(tx, (port, err))| (tx, port, format!("read1 {:?}", err)))
                     })
                     .and_then(|(tx, (port, frame))| {
-                        tx.send(frame)
-                            .map(|tx| (tx, port))
-                            .map_err(|err| panic!())
-                            // error: Never, panic impossible!
+                        tx.send(frame).map(|tx| (tx, port)).map_err(|err| panic!())
+                        // error: Never, panic impossible!
                     })
                     .recover(|(tx, port, err)| {
                         println!("Out err: {}", err);
@@ -183,10 +181,13 @@ impl ProcessHandler for Processor {
     fn process(&mut self, client: &Client, ps: &ProcessScope) -> Control {
         let in_frame = Frame {
             rate: client.sample_rate() as f32,
-            data: Array::from_iter(self.inputs
-            .iter()
-            .flat_map(|input| input.as_slice(ps).to_vec()))
-            .into_shape((self.inputs.len(), client.buffer_size() as usize)).unwrap().reversed_axes(),
+            data: Array::from_iter(
+                self.inputs
+                    .iter()
+                    .flat_map(|input| input.as_slice(ps).to_vec()),
+            ).into_shape((self.inputs.len(), client.buffer_size() as usize))
+                .unwrap()
+                .reversed_axes(),
         };
 
         // ignore errors, prefer to drop the frame

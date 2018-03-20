@@ -271,7 +271,8 @@ impl<I: 'static, O: 'static> Port<I, O> {
             b_edge.other = Some(Arc::downgrade(&a));
 
             // UnsafeCells protected by edge mutex
-            for waker in a_edge.connect_wait
+            for waker in a_edge
+                .connect_wait
                 .drain(..)
                 .chain(b_edge.connect_wait.drain(..))
             {
@@ -307,7 +308,8 @@ impl<I: 'static, O: 'static> Port<I, O> {
                 };
                 // check that the port this one is connected to hasn't changed in between
                 // finding `other` and locking the edges
-                if !a_edge.other
+                if !a_edge
+                    .other
                     .as_ref()
                     .and_then(|x| x.upgrade())
                     .map(|self_other| Arc::ptr_eq(other, &self_other))
@@ -349,7 +351,11 @@ impl<I: 'static, O: 'static> Port<I, O> {
         }
     }
     fn edge(&self) -> Option<Arc<Port<O, I>>> {
-        self.edge.spin_lock().other.as_ref().and_then(|x| x.upgrade())
+        self.edge
+            .spin_lock()
+            .other
+            .as_ref()
+            .and_then(|x| x.upgrade())
     }
 
     /// Returns a `Future` which writes a `Vec` of data to a port, returning the port.
@@ -415,9 +421,6 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
     type Error = (Arc<Port<I, O>>, Error);
     fn poll(&mut self, cx: &mut Context) -> Result<Async<Self::Item>, Self::Error> {
         let port = self.port.as_ref().unwrap();
-        let data;
-        let size;
-
         {
             let mut inner = match port.inner.lock().poll(cx) {
                 Ok(Async::Ready(inner)) => inner,
@@ -432,32 +435,29 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
                 return Err((self.port.take().unwrap(), Error::Disconnected));
             }
             // the buffer is protected by buf_lock
-            size = inner.buffer_size;
+            let buffer_size = inner.buffer_size;
             let buf = &mut inner.buffer;
             // attempt read
-            if self.n.map(|n| size < n).unwrap_or(size == 0) {
+            if self.n.map(|n| buffer_size < n).unwrap_or(buffer_size == 0) {
                 // not enough data available
                 // register to wake on next write
                 inner.read_wait.push(cx.waker().clone());
-                data = None;
             } else {
                 // move data out of queue
-                let n = self.n.unwrap_or(size);
+                let n = self.n.unwrap_or(buffer_size);
                 let iter = buf.drain(..(n * mem::size_of::<I>()));
-                data = Some(iter.collect::<Vec<_>>().into());
+                let data = iter.collect::<Vec<_>>().into();
                 inner.buffer_size -= n;
+                drop(inner);
+                return Ok(Async::Ready((
+                    self.port.take().unwrap(),
+                    bytes_as_typed(data, n),
+                )));
             }
         }
 
-        if let Some(data) = data {
-            Ok(Async::Ready((
-                self.port.take().unwrap(),
-                bytes_as_typed(data, size),
-            )))
-        } else {
-            // the waker would have been put into inner.read_wait if we get here
-            Ok(Async::Pending)
-        }
+        // the waker would have been put into inner.read_wait if we get here
+        Ok(Async::Pending)
     }
 }
 
@@ -538,7 +538,10 @@ fn typed_as_bytes<T: 'static>(data: Box<[T]>, size: usize) -> Box<[u8]> {
 }
 
 fn bytes_as_typed<T: 'static>(data: Box<[u8]>, size: usize) -> Box<[T]> {
-    assert!(mem::size_of::<T>() == 0 || data.len() % mem::size_of::<T>() == 0); // ensure alignment
+    assert!(
+        mem::size_of::<T>() == 0
+            || (data.len() % mem::size_of::<T>() == 0 && size == data.len() / mem::size_of::<T>())
+    );
     let raw = Box::into_raw(data);
     unsafe { Box::from_raw(slice::from_raw_parts_mut(raw as *mut T, size)) }
 }
