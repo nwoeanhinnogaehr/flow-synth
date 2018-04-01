@@ -69,7 +69,7 @@ impl AudioIOFuture {
                     .wrap(recv)
                     .map_err(|(recv, (port, err))| (recv, port, format!("read1 {:?}", err)))
                     .and_then(|(recv, (port, _req))| {
-                        recv.into_future()
+                        recv.next()
                             .map(|(frame, recv)| (frame.unwrap(), recv, port))
                             .map_err(|(_err, _recv)| panic!()) // error: Never, panic impossible!
                     })
