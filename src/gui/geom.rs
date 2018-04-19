@@ -1,6 +1,6 @@
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Default)]
 pub struct Pt2 {
     pub x: f32,
     pub y: f32,
@@ -34,29 +34,29 @@ macro_rules! impl_binop_pt2 {
         impl $op for Pt2 {
             type Output = Pt2;
             #[inline(always)]
-            fn $fn(self, other: Pt2) -> Pt2  {
+            fn $fn(self, other: Pt2) -> Pt2 {
                 Pt2::new(self.x.$fn(other.x), self.y.$fn(other.y))
             }
         }
         impl $op<f32> for Pt2 {
             type Output = Pt2;
             #[inline(always)]
-            fn $fn(self, other: f32) -> Pt2  {
+            fn $fn(self, other: f32) -> Pt2 {
                 Pt2::new(self.x.$fn(other), self.y.$fn(other))
             }
         }
-    }
+    };
 }
 macro_rules! impl_uniop_pt2 {
     ($op:ty, $fn:ident) => {
         impl $op for Pt2 {
             type Output = Pt2;
             #[inline(always)]
-            fn $fn(self) -> Pt2  {
+            fn $fn(self) -> Pt2 {
                 Pt2::new((self.x).$fn(), (self.y).$fn())
             }
         }
-    }
+    };
 }
 impl_binop_pt2!(Add, add);
 impl_binop_pt2!(Sub, sub);
@@ -64,7 +64,7 @@ impl_binop_pt2!(Mul, mul);
 impl_binop_pt2!(Div, div);
 impl_uniop_pt2!(Neg, neg);
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Default)]
 pub struct Pt3 {
     pub x: f32,
     pub y: f32,
@@ -103,29 +103,29 @@ macro_rules! impl_binop_pt3 {
         impl $op for Pt3 {
             type Output = Pt3;
             #[inline(always)]
-            fn $fn(self, other: Pt3) -> Pt3  {
+            fn $fn(self, other: Pt3) -> Pt3 {
                 Pt3::new(self.x.$fn(other.x), self.y.$fn(other.y), self.z.$fn(other.z))
             }
         }
         impl $op<f32> for Pt3 {
             type Output = Pt3;
             #[inline(always)]
-            fn $fn(self, other: f32) -> Pt3  {
+            fn $fn(self, other: f32) -> Pt3 {
                 Pt3::new(self.x.$fn(other), self.y.$fn(other), self.z.$fn(other))
             }
         }
-    }
+    };
 }
 macro_rules! impl_uniop_pt3 {
     ($op:ty, $fn:ident) => {
         impl $op for Pt3 {
             type Output = Pt3;
             #[inline(always)]
-            fn $fn(self) -> Pt3  {
+            fn $fn(self) -> Pt3 {
                 Pt3::new((self.x).$fn(), (self.y).$fn(), (self.z).$fn())
             }
         }
-    }
+    };
 }
 impl_binop_pt3!(Add, add);
 impl_binop_pt3!(Sub, sub);
@@ -133,7 +133,7 @@ impl_binop_pt3!(Mul, mul);
 impl_binop_pt3!(Div, div);
 impl_uniop_pt3!(Neg, neg);
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Rect2 {
     pub pos: Pt2,
     pub size: Pt2,
@@ -168,7 +168,7 @@ impl Rect2 {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Rect3 {
     pub pos: Pt3,
     pub size: Pt2,
@@ -185,7 +185,7 @@ impl Rect3 {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Box3 {
     pub pos: Pt3,
     pub size: Pt3,

@@ -1,11 +1,11 @@
-use futures::prelude::*;
+use futures::channel::mpsc;
 use futures::executor;
 use futures::future;
-use futures::channel::mpsc;
+use futures::prelude::*;
 use futures::task;
 
-use module::{flow, Module};
 use future_ext::{Breaker, FutureWrapExt};
+use module::{flow, Module};
 
 use jack::*;
 
@@ -13,7 +13,7 @@ use ndarray::{Array, Array2, Axis};
 
 use std::sync::Arc;
 
-struct Frame {
+pub struct Frame {
     pub rate: f32,
     pub data: Array2<f32>,
 }
@@ -181,11 +181,8 @@ impl ProcessHandler for Processor {
     fn process(&mut self, client: &Client, ps: &ProcessScope) -> Control {
         let in_frame = Frame {
             rate: client.sample_rate() as f32,
-            data: Array::from_iter(
-                self.inputs
-                    .iter()
-                    .flat_map(|input| input.as_slice(ps).to_vec()),
-            ).into_shape((self.inputs.len(), client.buffer_size() as usize))
+            data: Array::from_iter(self.inputs.iter().flat_map(|input| input.as_slice(ps).to_vec()))
+                .into_shape((self.inputs.len(), client.buffer_size() as usize))
                 .unwrap()
                 .reversed_axes(),
         };

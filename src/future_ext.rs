@@ -1,6 +1,7 @@
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
+use std::sync::{atomic::{AtomicBool, Ordering},
+                Arc};
 
 use crossbeam::sync::SegQueue;
 
@@ -100,10 +101,7 @@ impl<'a, T: 'a> Future for LockFuture<'a, T> {
 
     fn poll(&mut self, cx: &mut task::Context) -> Poll<Self::Item, Self::Error> {
         for try in 0..2 {
-            if self.lock
-                .flag
-                .compare_and_swap(false, true, Ordering::Acquire)
-            {
+            if self.lock.flag.compare_and_swap(false, true, Ordering::Acquire) {
                 // if we failed to lock, register this future to be notified upon next release and
                 // try again in case it gets unlocked in between trying to lock and pushing to the
                 // queue. tuning the number of tries before pushing to the queue may marginally

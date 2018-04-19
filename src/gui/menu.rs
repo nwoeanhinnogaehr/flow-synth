@@ -1,4 +1,4 @@
-use gui::{RenderContext, component::*, event::*, geom::*, render::*};
+use gui::{component::*, event::*, geom::*, render::*, RenderContext};
 
 use gfx_device_gl as gl;
 
@@ -144,10 +144,7 @@ impl MenuView {
             ctx.draw_rect(
                 Rect3::new(
                     (pos + BORDER_SIZE).with_z(0.0),
-                    Pt2::new(
-                        ITEM_WIDTH - BORDER_SIZE * 2.0,
-                        ITEM_HEIGHT - BORDER_SIZE * 2.0,
-                    ),
+                    Pt2::new(ITEM_WIDTH - BORDER_SIZE * 2.0, ITEM_HEIGHT - BORDER_SIZE * 2.0),
                 ),
                 if item.hover {
                     [0.0; 3]
@@ -178,11 +175,7 @@ impl MenuView {
                 }
                 if sub_menu.open && sub_menu.any_children_hovered() {
                     path.push(item.label());
-                    if !self.intersect_impl(
-                        sub_menu,
-                        pos + Pt2::new(ITEM_WIDTH - BORDER_SIZE, 0.0),
-                        path,
-                    ) {
+                    if !self.intersect_impl(sub_menu, pos + Pt2::new(ITEM_WIDTH - BORDER_SIZE, 0.0), path) {
                         return false;
                     }
                 }

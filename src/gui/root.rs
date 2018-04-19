@@ -3,12 +3,12 @@
 use gui::{component::*, connect::*, event::*, geom::*, menu::*, module_gui::*, render::*};
 use module::flow;
 
-use gfx_device_gl as gl;
 use futures::executor::ThreadPool;
+use gfx_device_gl as gl;
 
-use std::sync::Arc;
-use std::rc::Rc;
 use std::cmp::Ordering;
+use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct Root {
     graph: Arc<flow::Graph>,
@@ -31,7 +31,7 @@ impl Root {
             module_types: load_metamodules(),
             context_menu: None,
             jack_ctx: JackContext::new(bounds),
-            executor: ThreadPool::new(),
+            executor: ThreadPool::new().unwrap(),
 
             ctx,
         }
@@ -60,10 +60,7 @@ impl Root {
     fn open_new_module_menu(&mut self, pos: Pt2) {
         self.context_menu = Some(MenuView::new(
             self.ctx.clone(),
-            Box3::new(
-                pos.with_z(0.0),
-                (self.bounds.size.drop_z() - pos).with_z(0.0),
-            ),
+            Box3::new(pos.with_z(0.0), (self.bounds.size.drop_z() - pos).with_z(0.0)),
             Menu::new(&self.module_types
                 .iter()
                 .map(|ty| item(&ty.name()))
@@ -137,8 +134,7 @@ impl GuiComponent for Root {
                         match status {
                             MenuUpdate::Select(path) => {
                                 let name: &str = path[0].as_ref();
-                                self.new_module(name, Rect2::new(pos, 256.0.into()))
-                                    .unwrap();
+                                self.new_module(name, Rect2::new(pos, 256.0.into())).unwrap();
                                 self.context_menu = None;
                             }
                             _ => (),
@@ -195,11 +191,13 @@ impl GuiComponent for Root {
 }
 
 fn load_metamodules() -> Vec<Box<GuiModuleFactory>> {
-    use module::debug::*;
     use module::audio_io::*;
+    use module::debug::*;
+    use module::livecode::*;
     vec![
         Box::new(BasicGuiModuleFactory::<Printer<i32>>::new()),
         Box::new(BasicGuiModuleFactory::<Counter<i32>>::new()),
         Box::new(BasicGuiModuleFactory::<AudioIO>::new()),
+        Box::new(BasicGuiModuleFactory::<LiveCode>::new()),
     ]
 }

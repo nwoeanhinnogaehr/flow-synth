@@ -8,13 +8,13 @@ use future_ext::Lock;
 use futures::prelude::*;
 use futures::task::Context;
 
-use std::sync::{Arc, RwLock, Weak};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::any::TypeId;
 use std::collections::{HashMap, VecDeque};
+use std::marker::PhantomData;
 use std::mem;
 use std::slice;
-use std::any::TypeId;
-use std::marker::PhantomData;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, RwLock, Weak};
 
 /// A lightweight persistent identifier for a node.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -271,11 +271,7 @@ impl<I: 'static, O: 'static> Port<I, O> {
             b_edge.other = Some(Arc::downgrade(&a));
 
             // UnsafeCells protected by edge mutex
-            for waker in a_edge
-                .connect_wait
-                .drain(..)
-                .chain(b_edge.connect_wait.drain(..))
-            {
+            for waker in a_edge.connect_wait.drain(..).chain(b_edge.connect_wait.drain(..)) {
                 waker.wake();
             }
             Ok(())
@@ -351,11 +347,7 @@ impl<I: 'static, O: 'static> Port<I, O> {
         }
     }
     fn edge(&self) -> Option<Arc<Port<O, I>>> {
-        self.edge
-            .spin_lock()
-            .other
-            .as_ref()
-            .and_then(|x| x.upgrade())
+        self.edge.spin_lock().other.as_ref().and_then(|x| x.upgrade())
     }
 
     /// Returns a `Future` which writes a `Vec` of data to a port, returning the port.
@@ -449,10 +441,7 @@ impl<I: 'static, O: 'static> Future for ReadFuture<I, O> {
                 let data = iter.collect::<Vec<_>>().into();
                 inner.buffer_size -= n;
                 drop(inner);
-                return Ok(Async::Ready((
-                    self.port.take().unwrap(),
-                    bytes_as_typed(data, n),
-                )));
+                return Ok(Async::Ready((self.port.take().unwrap(), bytes_as_typed(data, n))));
             }
         }
 

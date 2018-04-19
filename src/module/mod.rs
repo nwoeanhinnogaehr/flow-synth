@@ -1,9 +1,10 @@
-pub mod flow;
-pub mod debug;
 pub mod audio_io;
+pub mod debug;
+pub mod flow;
+pub mod livecode;
 
-use std::sync::Arc;
 use futures::executor;
+use std::sync::Arc;
 
 pub trait Module: Send {
     fn new(ifc: Arc<flow::Interface>) -> Self

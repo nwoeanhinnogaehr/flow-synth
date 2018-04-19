@@ -3,9 +3,9 @@ use module::*;
 
 use futures::executor::ThreadPool;
 
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::marker::PhantomData;
 
 use gfx_device_gl as gl;
 
@@ -45,14 +45,41 @@ pub trait GuiModule: GuiComponent<GuiModuleUpdate> {
     fn node(&self) -> Arc<flow::Node>;
 }
 
+pub type BodyUpdate = bool;
+pub trait ModuleGui {
+    fn new_body(&mut self, ctx: &mut RenderContext, bounds: Box3) -> Box<GuiComponent<BodyUpdate>>;
+}
+impl<T> ModuleGui for T {
+    default fn new_body(&mut self, ctx: &mut RenderContext, bounds: Box3) -> Box<GuiComponent<BodyUpdate>> {
+        Box::new(NullComponent {})
+    }
+}
+
 const TITLE_BAR_HEIGHT: f32 = 24.0;
 const BORDER_SIZE: f32 = 1.0;
+const JACK_HEIGHT: f32 = 20.0;
+
+struct NullComponent {}
+impl<T: Default> GuiComponent<T> for NullComponent {
+    fn set_bounds(&mut self, bounds: Box3) {}
+    fn bounds(&self) -> Box3 {
+        Box3::default()
+    }
+    fn intersect(&self, pos: Pt2) -> bool {
+        false
+    }
+    fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext) {}
+    fn handle(&mut self, event: &Event) -> T {
+        T::default()
+    }
+}
 
 pub struct GuiModuleWrapper<T: Module + 'static> {
     module: T,
     node: Arc<flow::Node>,
 
     target: TextureTarget,
+    body: Box<GuiComponent<BodyUpdate>>,
 
     delete_button: Button,
     jacks: Vec<Rc<Jack<Arc<flow::OpaquePort>>>>,
@@ -72,7 +99,7 @@ impl<T: Module + 'static> GuiModuleWrapper<T> {
         let GuiModuleConfig {
             bounds,
             jack_ctx,
-            ctx,
+            mut ctx,
             graph,
             executor,
         } = cfg;
@@ -81,17 +108,27 @@ impl<T: Module + 'static> GuiModuleWrapper<T> {
         let node = graph.node(ifc.id()).unwrap();
         let mut module = T::new(ifc);
 
-        let jacks = module
+        let jacks: Vec<_> = module
             .ports()
             .iter()
             .enumerate()
             .map(|(idx, port)| {
-                let pos = Pt3::new(4.0, 4.0 + TITLE_BAR_HEIGHT + idx as f32 * 20.0, 0.8);
-                let size = Pt3::new(bounds.size.x, 20.0, 0.1);
+                let pos = Pt3::new(4.0, 4.0 + TITLE_BAR_HEIGHT + idx as f32 * JACK_HEIGHT, 0.8);
+                let size = Pt3::new(bounds.size.x, JACK_HEIGHT, 0.1);
                 let jack_bounds = Box3::new(pos, size);
                 jack_ctx.new_jack(port.clone(), jack_bounds, bounds.pos)
             })
             .collect();
+
+        let body_bounds = jacks
+            .last()
+            .map(|jack| {
+                let jack_bounds = jack.bounds();
+                let pos = Pt3::new(0.0, jack_bounds.pos.y + JACK_HEIGHT, 0.0);
+                Box3::new(pos, Pt3::new(bounds.size.x, bounds.size.y - pos.y, 0.1))
+            })
+            .unwrap_or(Box3::new(Pt3::new(4.0, 4.0 + TITLE_BAR_HEIGHT, 0.8), bounds.size));
+        let body = module.new_body(&mut ctx, body_bounds);
 
         module.start(executor);
 
@@ -99,15 +136,12 @@ impl<T: Module + 'static> GuiModuleWrapper<T> {
             module,
             node,
             target,
+            body,
             delete_button: Button::new(
                 ctx,
                 "X".into(),
                 Box3 {
-                    pos: Pt3::new(
-                        bounds.size.x - TITLE_BAR_HEIGHT - BORDER_SIZE,
-                        BORDER_SIZE,
-                        0.0,
-                    ),
+                    pos: Pt3::new(bounds.size.x - TITLE_BAR_HEIGHT - BORDER_SIZE, BORDER_SIZE, 0.0),
                     size: Pt3::new(TITLE_BAR_HEIGHT, TITLE_BAR_HEIGHT, 0.0),
                 },
             ),
@@ -147,6 +181,7 @@ impl<T: Module + 'static> GuiModuleWrapper<T> {
         for jack in &mut self.jacks {
             jack.render(device, self.target.ctx());
         }
+        self.body.render(device, self.target.ctx());
     }
     fn handle_delete_button(&mut self, event: Event) -> GuiModuleUpdate {
         match self.delete_button.handle(&event) {
@@ -203,6 +238,7 @@ where
         for jack in &mut self.jacks {
             jack.handle(&event.translate(-origin));
         }
+        self.dirty |= self.body.handle(&event.translate(-origin));
         match event.data {
             EventData::MouseMove(pos) => {
                 if let Some(drag) = self.drag {

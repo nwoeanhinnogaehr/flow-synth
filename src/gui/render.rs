@@ -3,14 +3,14 @@ use gui::geom::*;
 use std::sync::{Arc, Mutex};
 
 use gfx;
+use gfx::buffer::Role;
+use gfx::handle::{Buffer, DepthStencilView, RenderTargetView, Sampler, ShaderResourceView};
+use gfx::memory::{Bind, Usage};
 use gfx::texture;
 use gfx::traits::{Factory, FactoryExt};
 use gfx::{Encoder, IntoIndexBuffer, PipelineState, Slice};
-use gfx::memory::{Bind, Usage};
-use gfx::buffer::Role;
-use gfx::handle::{Buffer, DepthStencilView, RenderTargetView, Sampler, ShaderResourceView};
-use gfx_text;
 use gfx_device_gl as gl;
+use gfx_text;
 
 pub type ColorFormat = gfx::format::Rgba8;
 pub type DepthFormat = gfx::format::DepthStencil;
@@ -104,14 +104,8 @@ impl RectRenderer {
     fn new(mut factory: gl::Factory) -> RectRenderer {
         let pso = factory
             .create_pipeline_simple(
-                include_bytes!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/shaders/rect_150.glslv"
-                )),
-                include_bytes!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/shaders/rect_150.glslf"
-                )),
+                include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/shaders/rect_150.glslv")),
+                include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/shaders/rect_150.glslf")),
                 rect_pipe::new(),
             )
             .unwrap();
@@ -266,14 +260,8 @@ impl PipeRenderer {
     fn new(mut factory: gl::Factory) -> PipeRenderer {
         let pso = factory
             .create_pipeline_simple(
-                include_bytes!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/shaders/pipe_150.glslv"
-                )),
-                include_bytes!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/shaders/pipe_150.glslf"
-                )),
+                include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/shaders/pipe_150.glslv")),
+                include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/shaders/pipe_150.glslf")),
                 pipe_pipe::new(),
             )
             .unwrap();

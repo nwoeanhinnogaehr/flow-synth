@@ -3,8 +3,8 @@ use module::flow;
 
 use gfx_device_gl as gl;
 
-use std::rc::{Rc, Weak};
 use std::cell::{Cell, RefCell};
+use std::rc::{Rc, Weak};
 use std::sync::Arc;
 
 pub trait JackBackend {

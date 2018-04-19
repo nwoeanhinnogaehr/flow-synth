@@ -1,16 +1,16 @@
-use futures::prelude::*;
 use futures::executor;
 use futures::future;
+use futures::prelude::*;
 
-use module::{flow, Module};
 use future_ext::Breaker;
+use module::{flow, Module};
 
 use num::{One, Zero};
 use std::ops::Add;
 
-use std::sync::Arc;
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 pub struct Printer<T: Debug + Send + Sync + 'static> {
     ifc: Arc<flow::Interface>,

@@ -24,11 +24,12 @@ extern crate gfx_window_glutin;
 extern crate glutin;
 extern crate jack;
 extern crate ndarray;
+extern crate nfd;
 extern crate num;
 
-mod module;
-mod gui;
 mod future_ext;
+mod gui;
+mod module;
 
 fn main() {
     gui::gui_main();

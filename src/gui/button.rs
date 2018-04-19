@@ -1,4 +1,4 @@
-use gui::{RenderContext, component::*, event::*, geom::*};
+use gui::{component::*, event::*, geom::*, RenderContext};
 
 use gfx_device_gl as gl;
 
@@ -21,6 +21,9 @@ impl Button {
             clicking: false,
         }
     }
+    pub fn set_label(&mut self, label: String) {
+        self.label = label;
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -36,9 +39,6 @@ impl GuiComponent<ButtonUpdate> for Button {
     }
     fn set_bounds(&mut self, bounds: Box3) {
         self.bounds = bounds;
-    }
-    fn intersect(&self, pos: Pt2) -> bool {
-        self.bounds.flatten().drop_z().intersect(pos)
     }
     fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext) {
         // border
@@ -63,11 +63,7 @@ impl GuiComponent<ButtonUpdate> for Button {
                 }
             },
         );
-        ctx.draw_text(
-            &self.label,
-            self.bounds.pos + Pt3::new(4.0, 4.0, 0.0),
-            [1.0; 3],
-        );
+        ctx.draw_text(&self.label, self.bounds.pos + Pt3::new(4.0, 4.0, 0.0), [1.0; 3]);
     }
     fn handle(&mut self, event: &Event) -> ButtonUpdate {
         match event.data {

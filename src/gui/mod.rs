@@ -1,27 +1,27 @@
-mod render;
-mod menu;
-mod button;
-mod geom;
-mod component;
-mod event;
-mod module_gui;
-mod root;
-mod connect;
+pub mod button;
+pub mod component;
+pub mod connect;
+pub mod event;
+pub mod geom;
+pub mod menu;
+pub mod module_gui;
+pub mod render;
+pub mod root;
 
-use self::render::*;
-use self::geom::*;
-use self::event::*;
-use self::root::*;
 use self::component::*;
+use self::event::*;
+use self::geom::*;
+use self::render::*;
+use self::root::*;
 
 use glutin::{self, ContextBuilder, EventsLoop, GlContext, WindowBuilder};
 
-use std::time::Instant;
 use std::collections::VecDeque;
+use std::time::Instant;
 
 use gfx::Device;
-use gfx_window_glutin as gfx_glutin;
 use gfx_device_gl as gl;
+use gfx_window_glutin as gfx_glutin;
 
 /// Model holds info about GUI state
 /// and program state
@@ -79,11 +79,7 @@ impl Model {
                     button,
                     modifiers: _,
                 } => {
-                    self.generate_event(EventData::Click(
-                        self.mouse_pos,
-                        button.into(),
-                        state.into(),
-                    ));
+                    self.generate_event(EventData::Click(self.mouse_pos, button.into(), state.into()));
                 }
                 _ => (),
             },
