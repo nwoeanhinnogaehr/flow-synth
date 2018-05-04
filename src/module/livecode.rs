@@ -1,12 +1,18 @@
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::executor;
 use futures::future;
 use futures::prelude::*;
 
+use notify::*;
+
 use future_ext::{Breaker, FutureWrapExt};
 use module::{audio_io::Frame, flow, Module};
 
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
+use std::path::Path;
+use std::process;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 fn start_simple_processor<F: FnMut(Frame) -> Frame + Send + 'static, Ex: executor::Executor>(
     processor: F,
@@ -86,7 +92,8 @@ fn start_simple_processor<F: FnMut(Frame) -> Frame + Send + 'static, Ex: executo
     ))).unwrap();
 }
 
-enum Command {
+#[derive(Debug)]
+enum UserCommand {
     NewFile(String),
 }
 
@@ -95,32 +102,129 @@ pub struct LiveCode {
     in_port: Arc<flow::Port<Frame, ()>>,
     out_port: Arc<flow::Port<(), Frame>>,
     breaker: Breaker,
-    cmd_rx: Receiver<Command>,
-    cmd_tx: Option<Sender<Command>>,
+    cmd_rx: Option<UnboundedReceiver<UserCommand>>,
+    cmd_tx: Option<UnboundedSender<UserCommand>>,
+    watcher: Arc<Mutex<Option<RecommendedWatcher>>>,
+    child: Arc<Mutex<Option<process::Child>>>,
 }
 
-fn process(mut frame: Frame) -> Frame {
-    //temporary hack
-    frame.data.mapv_inplace(|x| x.abs());
-    frame
+impl Drop for LiveCode {
+    fn drop(&mut self) {
+        self.child.lock().unwrap().take().map(|mut child| {
+            println!("killing leftover child");
+            child.kill()
+        });
+    }
 }
+
 impl Module for LiveCode {
     fn new(ifc: Arc<flow::Interface>) -> LiveCode {
         let in_port = ifc.add_port("Input".into());
         let out_port = ifc.add_port("Output".into());
-        let (cmd_tx, cmd_rx) = mpsc::channel();
+        let (cmd_tx, cmd_rx) = mpsc::unbounded();
         LiveCode {
             ifc,
             in_port,
             out_port,
             breaker: Breaker::new(),
-            cmd_rx,
+            cmd_rx: Some(cmd_rx),
             cmd_tx: Some(cmd_tx),
+            watcher: Arc::default(),
+            child: Arc::default(),
         }
     }
-    fn start<Ex: executor::Executor>(&mut self, exec: Ex) {
+    fn start<Ex: executor::Executor>(&mut self, mut exec: Ex) {
+        let cmd_rx = self.cmd_rx.take().unwrap();
+        let watcher_handle = self.watcher.clone();
+        let child_handle = self.child.clone();
+        exec.spawn(Box::new(
+            cmd_rx
+                .for_each(move |event| {
+                    println!("event {:?}", event);
+                    match event {
+                        UserCommand::NewFile(filename) => {
+                            let (tx, rx) = ::std::sync::mpsc::channel();
+                            let mut watcher: RecommendedWatcher =
+                                Watcher::new(tx, Duration::from_secs(1)).unwrap();
+                            // watch parent dir and filter later, because if we just watch the file and
+                            // it gets removed it will stop watching it
+                            let parent_dir = Path::new(&filename).parent().unwrap();
+                            watcher.watch(parent_dir, RecursiveMode::NonRecursive).unwrap();
+                            // store it globally because otherwise it gets dropped and stops watching
+                            *watcher_handle.lock().unwrap() = Some(watcher);
+                            let child_handle = child_handle.clone();
+
+                            // TODO
+                            // This thread gets leaked, as does the thread spawned internally inside
+                            // the watcher... the notify crate is not cleaning up properly.
+                            // Not sure if it's mio that's broken or what.
+                            thread::spawn(move || loop {
+                                match rx.recv() {
+                                    Ok(event) => {
+                                        println!("{:?}", event);
+                                        match event {
+                                            DebouncedEvent::Write(path) => {
+                                                if path.to_str().unwrap() != filename {
+                                                    continue;
+                                                }
+                                                let child = match process::Command::new(path)
+                                                    .stdin(process::Stdio::piped())
+                                                    .stdout(process::Stdio::piped())
+                                                    .spawn()
+                                                {
+                                                    Ok(child) => child,
+                                                    Err(e) => {
+                                                        println!("err spawning: {:?}", e);
+                                                        continue;
+                                                    }
+                                                };
+
+                                                let mut child_handle = child_handle.lock().unwrap();
+                                                child_handle.take().map(|mut child| {
+                                                    println!("killing previous child");
+                                                    child.kill().unwrap();
+                                                });
+                                                *child_handle = Some(child);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    Err(e) => {
+                                        println!("Watcher thread done: {:?}", e);
+                                        return;
+                                    }
+                                }
+                            });
+                        }
+                    }
+                    Ok(())
+                })
+                .then(|x| Ok(())),
+        )).unwrap();
+
+        let child_handle = self.child.clone();
         start_simple_processor(
-            process,
+            move |mut frame: Frame| -> Frame {
+                let mut guard = child_handle.lock().unwrap();
+                let child = match *guard {
+                    Some(ref mut child) => child,
+                    None => return frame,
+                };
+                let stdin = child.stdin.as_mut().unwrap();
+                let stdout = child.stdout.as_mut().unwrap();
+                //temporary hack
+                use ndarray::Axis;
+                for mut buffer in frame.data.axis_iter_mut(Axis(1)) {
+                    for sample in buffer.iter_mut() {
+                        use std::io::{Read, Write};
+                        stdin.write(&[(*sample * 128.0 + 128.0) as u8]).unwrap();
+                        let mut buffer = &mut [0];
+                        stdout.read(buffer).unwrap();
+                        *sample = (buffer[0] as f32) / 128.0 - 1.0;
+                    }
+                }
+                frame
+            },
             self.in_port.clone(),
             self.out_port.clone(),
             self.breaker.clone(),
@@ -137,12 +241,13 @@ impl Module for LiveCode {
         self.ifc.ports()
     }
 }
+
 use gfx_device_gl as gl;
 use gui::{button::*, component::*, event::*, geom::*, module_gui::*, render::*};
 struct LiveCodeGui {
     bounds: Box3,
     open_button: Button,
-    cmd_tx: Sender<Command>,
+    cmd_tx: UnboundedSender<UserCommand>,
 }
 const PADDING: f32 = 4.0;
 impl ModuleGui for LiveCode {
@@ -180,7 +285,7 @@ impl GuiComponent<bool> for LiveCodeGui {
                 match nfd::open_file_dialog(None, None).unwrap() {
                     nfd::Response::Okay(path) => {
                         self.open_button.set_label(path.clone());
-                        self.cmd_tx.send(Command::NewFile(path)).unwrap();
+                        self.cmd_tx.unbounded_send(UserCommand::NewFile(path)).unwrap();
                     }
                     nfd::Response::Cancel => println!("selection cancelled"),
                     _ => panic!(),

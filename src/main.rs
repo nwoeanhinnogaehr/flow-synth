@@ -25,6 +25,7 @@ extern crate glutin;
 extern crate jack;
 extern crate ndarray;
 extern crate nfd;
+extern crate notify;
 extern crate num;
 
 mod future_ext;
