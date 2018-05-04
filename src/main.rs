@@ -5,7 +5,6 @@
 #![feature(const_fn)]
 #![feature(generators)]
 #![feature(generator_trait)]
-#![feature(match_default_bindings)]
 #![feature(libc)]
 #![feature(drain_filter)]
 #![feature(nll)]
