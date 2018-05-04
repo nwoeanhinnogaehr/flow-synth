@@ -6,7 +6,7 @@ authors = ["Noah Weninger <nweninge@ualberta.ca>"]
 [dependencies]
 glutin = "0.13.1"
 gfx = "*"
-gfx_window_glutin = "*"
+gfx_window_glutin = "0.21.0"
 gfx_text = "*"
 gfx_device_gl = "*"
 num = "*"
