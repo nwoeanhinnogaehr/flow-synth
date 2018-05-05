@@ -8,7 +8,7 @@ use notify::*;
 use future_ext::{Breaker, FutureWrapExt};
 use module::{audio_io::Frame, flow, Module};
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -133,6 +133,7 @@ impl Module for LiveCode {
             child: Arc::default(),
         }
     }
+
     fn start<Ex: executor::Executor>(&mut self, mut exec: Ex) {
         let cmd_rx = self.cmd_rx.take().unwrap();
         let watcher_handle = self.watcher.clone();
@@ -153,6 +154,7 @@ impl Module for LiveCode {
                             // store it globally because otherwise it gets dropped and stops watching
                             *watcher_handle.lock().unwrap() = Some(watcher);
                             let child_handle = child_handle.clone();
+                            spawn_child(&child_handle, PathBuf::from(&filename));
 
                             // TODO
                             // This thread gets leaked, as does the thread spawned internally inside
@@ -167,24 +169,7 @@ impl Module for LiveCode {
                                                 if path.to_str().unwrap() != filename {
                                                     continue;
                                                 }
-                                                let child = match process::Command::new(path)
-                                                    .stdin(process::Stdio::piped())
-                                                    .stdout(process::Stdio::piped())
-                                                    .spawn()
-                                                {
-                                                    Ok(child) => child,
-                                                    Err(e) => {
-                                                        println!("err spawning: {:?}", e);
-                                                        continue;
-                                                    }
-                                                };
-
-                                                let mut child_handle = child_handle.lock().unwrap();
-                                                child_handle.take().map(|mut child| {
-                                                    println!("killing previous child");
-                                                    child.kill().unwrap();
-                                                });
-                                                *child_handle = Some(child);
+                                                spawn_child(&child_handle, path);
                                             }
                                             _ => {}
                                         }
@@ -213,15 +198,20 @@ impl Module for LiveCode {
                 let stdin = child.stdin.as_mut().unwrap();
                 let stdout = child.stdout.as_mut().unwrap();
                 //temporary hack
-                use ndarray::Axis;
-                for mut buffer in frame.data.axis_iter_mut(Axis(1)) {
-                    for sample in buffer.iter_mut() {
-                        use std::io::{Read, Write};
-                        stdin.write(&[(*sample * 128.0 + 128.0) as u8]).unwrap();
-                        let mut buffer = &mut [0];
-                        stdout.read(buffer).unwrap();
-                        *sample = (buffer[0] as f32) / 128.0 - 1.0;
-                    }
+                //need to use futures for io
+                use std::io::{Read, Write};
+                use std::mem;
+                let mut buffer: Vec<_> = frame.data.iter().cloned().collect();
+                let bytes: &mut [u8] = unsafe {
+                    ::std::slice::from_raw_parts_mut(
+                        buffer.as_ptr() as *mut u8,
+                        buffer.len() * mem::size_of::<f32>(),
+                    )
+                };
+                stdin.write(bytes).unwrap();
+                stdout.read(bytes).unwrap();
+                for (outs, ins) in frame.data.iter_mut().zip(buffer.drain(..)) {
+                    *outs = ins;
                 }
                 frame
             },
@@ -240,6 +230,26 @@ impl Module for LiveCode {
     fn ports(&self) -> Vec<Arc<flow::OpaquePort>> {
         self.ifc.ports()
     }
+}
+fn spawn_child(child_handle: &Arc<Mutex<Option<process::Child>>>, path: PathBuf) {
+    let child = match process::Command::new(path)
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            println!("err spawning: {:?}", e);
+            return;
+        }
+    };
+
+    let mut child_handle = child_handle.lock().unwrap();
+    child_handle.take().map(|mut child| {
+        println!("killing previous child");
+        child.kill().unwrap();
+    });
+    *child_handle = Some(child);
 }
 
 use gfx_device_gl as gl;
