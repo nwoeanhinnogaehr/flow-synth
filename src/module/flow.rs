@@ -9,7 +9,7 @@ use futures::prelude::*;
 use futures::task::Context;
 
 use std::any::TypeId;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, BTreeMap, VecDeque};
 use std::marker::PhantomData;
 use std::mem;
 use std::slice;
@@ -17,12 +17,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock, Weak};
 
 /// A lightweight persistent identifier for a node.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub struct NodeId(pub usize);
 
 /// A lightweight persistent identifier for a port. Only gauranteeed to be unique within a specific
 /// node.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub struct PortId(pub usize);
 
 /// A graph holds a collection of Nodes. Nodes have a collection of Ports. Ports can be connected
@@ -101,7 +101,7 @@ impl Node {
 /// associated Ports.
 pub struct Interface {
     id: NodeId,
-    ports: RwLock<HashMap<PortId, Arc<OpaquePort>>>,
+    ports: RwLock<BTreeMap<PortId, Arc<OpaquePort>>>,
     graph: Weak<Graph>,
 }
 
@@ -109,7 +109,7 @@ impl Interface {
     fn new(graph: &Arc<Graph>) -> Interface {
         Interface {
             id: NodeId(graph.generate_id()),
-            ports: RwLock::new(HashMap::new()),
+            ports: RwLock::new(BTreeMap::new()),
             graph: Arc::downgrade(graph),
         }
     }
