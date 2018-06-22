@@ -199,6 +199,7 @@ impl<T: JackBackend> GuiComponent for Rc<Jack<T>> {
                 }
                 _ => {}
             },
+            _ => {}
         }
     }
 }

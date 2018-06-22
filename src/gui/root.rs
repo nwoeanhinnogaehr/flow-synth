@@ -121,6 +121,11 @@ impl GuiComponent for Root {
     }
     fn handle(&mut self, event: &Event) {
         match event.data {
+            EventData::Key(_) | EventData::Character(_) => {
+                for module in &mut self.modules {
+                    module.handle(&event.with_focus(true));
+                }
+            },
             EventData::MouseMove(pos) | EventData::Click(pos, _, _) => {
                 // march from front to back, if we hit something set this flag so that we only send
                 // one event with focus

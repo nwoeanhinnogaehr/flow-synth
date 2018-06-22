@@ -253,10 +253,11 @@ fn spawn_child(child_handle: &Arc<Mutex<Option<process::Child>>>, path: PathBuf)
 }
 
 use gfx_device_gl as gl;
-use gui::{button::*, component::*, event::*, geom::*, module_gui::*, render::*};
+use gui::{button::*, component::*, event::*, geom::*, module_gui::*, render::*, textbox::*};
 struct LiveCodeGui {
     bounds: Box3,
     open_button: Button,
+    text: TextBox,
     cmd_tx: UnboundedSender<UserCommand>,
 }
 const PADDING: f32 = 4.0;
@@ -273,6 +274,14 @@ impl ModuleGui for LiveCode {
                     size: Pt3::new(bounds.size.x - PADDING * 2.0, 26.0, 0.0),
                 },
             ),
+            text: TextBox::new(
+                ctx.clone(),
+                "".into(),
+                Box3 {
+                    pos: bounds.pos + Pt3::new(PADDING, PADDING * 2.0 + 26.0, 0.0),
+                    size: Pt3::new(bounds.size.x - PADDING * 2.0, 26.0, 0.0),
+                },
+            ),
         })
     }
 }
@@ -285,9 +294,10 @@ impl GuiComponent<bool> for LiveCodeGui {
     }
     fn render(&mut self, device: &mut gl::Device, ctx: &mut RenderContext) {
         self.open_button.render(device, ctx);
+        self.text.render(device, ctx);
     }
     fn handle(&mut self, event: &Event) -> BodyUpdate {
-        match self.open_button.handle(event) {
+        let button_update = match self.open_button.handle(event) {
             ButtonUpdate::Unchanged => false,
             ButtonUpdate::NeedRender => true,
             ButtonUpdate::Clicked => {
@@ -302,6 +312,12 @@ impl GuiComponent<bool> for LiveCodeGui {
                 }
                 true
             }
-        }
+        };
+        let text_update = match self.text.handle(event) {
+            TextBoxUpdate::Unchanged => false,
+            TextBoxUpdate::NeedRender => true,
+            TextBoxUpdate::Modified => true,
+        };
+        button_update || text_update
     }
 }

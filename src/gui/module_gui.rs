@@ -268,7 +268,8 @@ where
                     }
                 }
                 self.handle_delete_button(event.translate(-origin))
-            }
+            },
+            _ => GuiModuleUpdate::Unchanged,
         }
     }
 }

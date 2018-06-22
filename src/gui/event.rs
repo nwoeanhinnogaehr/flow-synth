@@ -2,6 +2,8 @@ use gui::geom::*;
 
 use glutin;
 
+pub use glutin::VirtualKeyCode;
+
 #[derive(Copy, Clone, Debug)]
 pub struct Event {
     pub time: f32,
@@ -13,6 +15,7 @@ impl Event {
     pub fn translate(mut self, offset: Pt2) -> Event {
         match &mut self.data {
             EventData::MouseMove(ref mut pos) | EventData::Click(ref mut pos, _, _) => *pos = *pos + offset,
+            _ => {}
         }
         self
     }
@@ -26,6 +29,15 @@ impl Event {
 pub enum EventData {
     MouseMove(Pt2),
     Click(Pt2, MouseButton, ButtonState),
+    Key(KeyEvent),
+    Character(char),
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct KeyEvent {
+    pub code: VirtualKeyCode,
+    pub modifiers: KeyModifiers,
+    pub state: ButtonState,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -61,3 +73,23 @@ impl<'a> From<&'a glutin::MouseButton> for MouseButton {
         }
     }
 }
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct KeyModifiers {
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub logo: bool,
+}
+
+impl<'a> From<&'a glutin::ModifiersState> for KeyModifiers {
+    fn from(val: &glutin::ModifiersState) -> KeyModifiers {
+        KeyModifiers {
+            shift: val.shift,
+            ctrl: val.ctrl,
+            alt: val.alt,
+            logo: val.logo,
+        }
+    }
+}
+

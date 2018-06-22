@@ -1,3 +1,4 @@
+pub mod textbox;
 pub mod button;
 pub mod component;
 pub mod connect;
@@ -80,6 +81,17 @@ impl Model {
                     modifiers: _,
                 } => {
                     self.generate_event(EventData::Click(self.mouse_pos, button.into(), state.into()));
+                }
+                KeyboardInput {
+                    device_id: _,
+                    input,
+                } => {
+                    if let Some(code) = input.virtual_keycode {
+                        self.generate_event(EventData::Key(KeyEvent { code, modifiers: (&input.modifiers).into(), state: (&input.state).into() }));
+                    }
+                }
+                ReceivedCharacter(ch) => {
+                    self.generate_event(EventData::Character(*ch));
                 }
                 _ => (),
             },
