@@ -4,9 +4,9 @@ version = "0.1.0"
 authors = ["Noah Weninger <nweninge@ualberta.ca>"]
 
 [dependencies]
-glutin = "0.13.1"
+glutin = "*"
 gfx = "*"
-gfx_window_glutin = "0.21.0"
+gfx_window_glutin = "*"
 gfx_text = "*"
 gfx_device_gl = "*"
 num = "*"

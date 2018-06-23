@@ -148,7 +148,7 @@ pub fn gui_main() {
                     window_id: _,
                     event,
                 } => match event {
-                    Closed => running = false,
+                    CloseRequested => running = false,
                     Resized(_, _) => {
                         gfx_glutin::update_views(&window, &mut target.color, &mut target.depth);
                     }
