@@ -262,7 +262,7 @@ struct LiveCodeGui {
 }
 const PADDING: f32 = 4.0;
 impl ModuleGui for LiveCode {
-    fn new_body(&mut self, ctx: &mut RenderContext, bounds: Box3) -> Box<GuiComponent<BodyUpdate>> {
+    fn new_body(&mut self, ctx: &mut RenderContext, bounds: Box3) -> Box<dyn GuiComponent<BodyUpdate>> {
         Box::new(LiveCodeGui {
             cmd_tx: self.cmd_tx.take().unwrap(),
             bounds,

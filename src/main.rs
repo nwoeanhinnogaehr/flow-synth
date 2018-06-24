@@ -12,6 +12,7 @@
 #![feature(never_type)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
+#![deny(bare_trait_objects)]
 
 extern crate crossbeam;
 extern crate futures;

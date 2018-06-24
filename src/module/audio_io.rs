@@ -50,7 +50,7 @@ impl Module for AudioIO {
 
 struct AudioIOFuture {
     client: Option<AsyncClient<(), Processor>>,
-    future: Box<Future<Item = (), Error = Never> + Send>,
+    future: Box<dyn Future<Item = (), Error = Never> + Send>,
     output_rx: Option<mpsc::Receiver<Frame>>,
     input_tx: Option<mpsc::Sender<Frame>>,
     breaker: Breaker,

@@ -15,8 +15,8 @@ pub struct Root {
     bounds: Box3,
 
     ctx: RenderContext,
-    modules: Vec<Box<GuiModule>>,
-    module_types: Vec<Box<GuiModuleFactory>>,
+    modules: Vec<Box<dyn GuiModule>>,
+    module_types: Vec<Box<dyn GuiModuleFactory>>,
     context_menu: Option<MenuView>,
     jack_ctx: Rc<JackContext<Arc<flow::OpaquePort>>>,
     executor: ThreadPool,
@@ -68,7 +68,7 @@ impl Root {
         ));
     }
 
-    fn compare_node_z(a: &Box<GuiModule>, b: &Box<GuiModule>) -> Ordering {
+    fn compare_node_z(a: &Box<dyn GuiModule>, b: &Box<dyn GuiModule>) -> Ordering {
         let a_z = a.bounds().pos.z;
         let b_z = b.bounds().pos.z;
         a_z.partial_cmp(&b_z).unwrap()
@@ -195,7 +195,7 @@ impl GuiComponent for Root {
     }
 }
 
-fn load_metamodules() -> Vec<Box<GuiModuleFactory>> {
+fn load_metamodules() -> Vec<Box<dyn GuiModuleFactory>> {
     use module::audio_io::*;
     use module::debug::*;
     use module::livecode::*;

@@ -18,7 +18,7 @@ pub struct GuiModuleConfig {
 }
 pub trait GuiModuleFactory {
     fn name(&self) -> &str;
-    fn new(&mut self, arg: GuiModuleConfig) -> Box<GuiModule>;
+    fn new(&mut self, arg: GuiModuleConfig) -> Box<dyn GuiModule>;
 }
 
 #[derive(Default)]
@@ -36,7 +36,7 @@ impl<T: Module + 'static> GuiModuleFactory for BasicGuiModuleFactory<T> {
     fn name(&self) -> &str {
         T::name()
     }
-    fn new(&mut self, cfg: GuiModuleConfig) -> Box<GuiModule> {
+    fn new(&mut self, cfg: GuiModuleConfig) -> Box<dyn GuiModule> {
         Box::new(GuiModuleWrapper::<T>::new(cfg))
     }
 }
@@ -47,10 +47,10 @@ pub trait GuiModule: GuiComponent<GuiModuleUpdate> {
 
 pub type BodyUpdate = bool;
 pub trait ModuleGui {
-    fn new_body(&mut self, ctx: &mut RenderContext, bounds: Box3) -> Box<GuiComponent<BodyUpdate>>;
+    fn new_body(&mut self, ctx: &mut RenderContext, bounds: Box3) -> Box<dyn GuiComponent<BodyUpdate>>;
 }
 impl<T> ModuleGui for T {
-    default fn new_body(&mut self, ctx: &mut RenderContext, bounds: Box3) -> Box<GuiComponent<BodyUpdate>> {
+    default fn new_body(&mut self, ctx: &mut RenderContext, bounds: Box3) -> Box<dyn GuiComponent<BodyUpdate>> {
         Box::new(NullComponent {})
     }
 }
@@ -79,7 +79,7 @@ pub struct GuiModuleWrapper<T: Module + 'static> {
     node: Arc<flow::Node>,
 
     target: TextureTarget,
-    body: Box<GuiComponent<BodyUpdate>>,
+    body: Box<dyn GuiComponent<BodyUpdate>>,
 
     delete_button: Button,
     jacks: Vec<Rc<Jack<Arc<flow::OpaquePort>>>>,
