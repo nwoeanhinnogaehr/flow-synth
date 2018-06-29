@@ -1,4 +1,4 @@
-use gui::{button::*, component::*, connect::*, event::*, geom::*, render::*};
+use gui::{button::*, component::*, connect::*, event::*, geom::*, render::*, layout};
 use module::*;
 
 use futures::executor::ThreadPool;
@@ -50,7 +50,11 @@ pub trait ModuleGui {
     fn new_body(&mut self, ctx: &mut RenderContext, bounds: Box3) -> Box<dyn GuiComponent<BodyUpdate>>;
 }
 impl<T> ModuleGui for T {
-    default fn new_body(&mut self, ctx: &mut RenderContext, bounds: Box3) -> Box<dyn GuiComponent<BodyUpdate>> {
+    default fn new_body(
+        &mut self,
+        ctx: &mut RenderContext,
+        bounds: Box3,
+    ) -> Box<dyn GuiComponent<BodyUpdate>> {
         Box::new(NullComponent {})
     }
 }
@@ -107,28 +111,33 @@ impl<T: Module + 'static> GuiModuleWrapper<T> {
         let ifc = graph.add_node();
         let node = graph.node(ifc.id()).unwrap();
         let mut module = T::new(ifc);
+        let ports = module.ports();
 
-        let jacks: Vec<_> = module
-            .ports()
+        // Bounds pos is relative to the window, so we drop it and keep just the size,
+        // for the purposes of the layout solver
+        let mut solver = layout::Layout::new(Box3::new(0.0.into(), bounds.size));
+
+        // set up two main areas, for the jacks and the body
+        let jack_area = solver.add_node();
+        let body_area = solver.add_node();
+        solver.stack(layout::Axis::Y, &[jack_area, body_area]);
+        solver.suggest(jack_area, layout::Field::Height, ports.len() as f64 * JACK_HEIGHT as f64, layout::REQUIRED);
+        solver.suggest(jack_area, layout::Field::Y, TITLE_BAR_HEIGHT as f64, layout::REQUIRED);
+
+        // stack all jacks vertically inside the jack area
+        let jack_layouts = solver.add_nodes(ports.len());
+        solver.equalize(layout::Field::Height, &jack_layouts, layout::REQUIRED);
+        solver.stack(layout::Axis::Y, &jack_layouts);
+        solver.insert_inside(jack_area, &jack_layouts);
+        let jacks: Vec<_> = ports
             .iter()
-            .enumerate()
-            .map(|(idx, port)| {
-                let pos = Pt3::new(4.0, 4.0 + TITLE_BAR_HEIGHT + idx as f32 * JACK_HEIGHT, 0.8);
-                let size = Pt3::new(bounds.size.x, JACK_HEIGHT, 0.1);
-                let jack_bounds = Box3::new(pos, size);
-                jack_ctx.new_jack(port.clone(), jack_bounds, bounds.pos)
+            .zip(jack_layouts)
+            .map(|(port, layout)| {
+                jack_ctx.new_jack(port.clone(), solver.query(layout), bounds.pos)
             })
             .collect();
 
-        let body_bounds = jacks
-            .last()
-            .map(|jack| {
-                let jack_bounds = jack.bounds();
-                let pos = Pt3::new(0.0, jack_bounds.pos.y + JACK_HEIGHT, 0.0);
-                Box3::new(pos, Pt3::new(bounds.size.x, bounds.size.y - pos.y, 0.1))
-            })
-            .unwrap_or(Box3::new(Pt3::new(4.0, 4.0 + TITLE_BAR_HEIGHT, 0.8), bounds.size));
-        let body = module.new_body(&mut ctx, body_bounds);
+        let body = module.new_body(&mut ctx, solver.query(body_area));
 
         module.start(executor);
 
@@ -268,7 +277,7 @@ where
                     }
                 }
                 self.handle_delete_button(event.translate(-origin))
-            },
+            }
             _ => GuiModuleUpdate::Unchanged,
         }
     }

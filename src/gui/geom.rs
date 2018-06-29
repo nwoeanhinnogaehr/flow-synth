@@ -104,7 +104,11 @@ macro_rules! impl_binop_pt3 {
             type Output = Pt3;
             #[inline(always)]
             fn $fn(self, other: Pt3) -> Pt3 {
-                Pt3::new(self.x.$fn(other.x), self.y.$fn(other.y), self.z.$fn(other.z))
+                Pt3::new(
+                    self.x.$fn(other.x),
+                    self.y.$fn(other.y),
+                    self.z.$fn(other.z),
+                )
             }
         }
         impl $op<f32> for Pt3 {
@@ -160,7 +164,9 @@ impl Rect2 {
         }
     }
     pub fn intersect(&self, pt: Pt2) -> bool {
-        pt.x > self.pos.x && pt.x < self.pos.x + self.size.x && pt.y > self.pos.y
+        pt.x > self.pos.x
+            && pt.x < self.pos.x + self.size.x
+            && pt.y > self.pos.y
             && pt.y < self.pos.y + self.size.y
     }
     pub fn offset(self, other: Rect2) -> Rect2 {
@@ -168,7 +174,7 @@ impl Rect2 {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct Rect3 {
     pub pos: Pt3,
     pub size: Pt2,
@@ -185,7 +191,7 @@ impl Rect3 {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct Box3 {
     pub pos: Pt3,
     pub size: Pt3,

@@ -18,6 +18,7 @@ extern crate crossbeam;
 extern crate futures;
 #[macro_use]
 extern crate gfx;
+extern crate cassowary;
 extern crate gfx_device_gl;
 extern crate gfx_text;
 extern crate gfx_window_glutin;
