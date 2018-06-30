@@ -57,7 +57,7 @@ impl GuiComponent<TextBoxUpdate> for TextBox {
         // cursor
         ctx.draw_rect(
             Rect3::new(
-                self.bounds.pos + Pt3::new(4.0 + self.cursor as f32 * 10.0, 0.0, 0.0),
+                self.bounds.pos + Pt3::new(4.0 + self.cursor as f32 * 9.7, 0.0, 0.0),
                 Pt2::new(10.0, self.bounds.size.y),
             ),
             if self.focused { [0.1, 0.3, 0.1] } else { [0.2; 3] },
