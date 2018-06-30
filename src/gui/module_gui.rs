@@ -1,4 +1,4 @@
-use gui::{button::*, component::*, connect::*, event::*, geom::*, render::*, layout};
+use gui::{button::*, component::*, connect::*, event::*, geom::*, layout, render::*};
 use module::*;
 
 use futures::executor::ThreadPool;
@@ -121,8 +121,18 @@ impl<T: Module + 'static> GuiModuleWrapper<T> {
         let jack_area = solver.add_node();
         let body_area = solver.add_node();
         solver.stack(layout::Axis::Y, &[jack_area, body_area]);
-        solver.suggest(jack_area, layout::Field::Height, ports.len() as f64 * JACK_HEIGHT as f64, layout::REQUIRED);
-        solver.suggest(jack_area, layout::Field::Y, TITLE_BAR_HEIGHT as f64, layout::REQUIRED);
+        solver.suggest(
+            jack_area,
+            layout::Field::Height,
+            ports.len() as f64 * JACK_HEIGHT as f64,
+            layout::REQUIRED,
+        );
+        solver.suggest(
+            jack_area,
+            layout::Field::Y,
+            TITLE_BAR_HEIGHT as f64,
+            layout::REQUIRED,
+        );
 
         // stack all jacks vertically inside the jack area
         let jack_layouts = solver.add_nodes(ports.len());
@@ -132,9 +142,7 @@ impl<T: Module + 'static> GuiModuleWrapper<T> {
         let jacks: Vec<_> = ports
             .iter()
             .zip(jack_layouts)
-            .map(|(port, layout)| {
-                jack_ctx.new_jack(port.clone(), solver.query(layout), bounds.pos)
-            })
+            .map(|(port, layout)| jack_ctx.new_jack(port.clone(), solver.query(layout), bounds.pos))
             .collect();
 
         let body = module.new_body(&mut ctx, solver.query(body_area));

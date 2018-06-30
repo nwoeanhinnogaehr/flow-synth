@@ -137,7 +137,8 @@ impl RectRenderer {
         self.rects.push(rect);
     }
     fn draw(&mut self, encoder: &mut Encoder<gl::Resources, gl::CommandBuffer>, target: &Target) {
-        let instance_buffer = self.factory
+        let instance_buffer = self
+            .factory
             .create_buffer_immutable(&self.rects, Role::Vertex, Bind::empty())
             .unwrap();
         let data = rect_pipe::Data {
@@ -207,7 +208,8 @@ impl TexturedRectRenderer {
                     tex_coord: [1.0, 1.0],
                 },
             ];
-            let (vertex_buffer, slice) = self.factory
+            let (vertex_buffer, slice) = self
+                .factory
                 .create_vertex_buffer_with_slice(&vertices, &RECT_IDX[..]);
             let data = textured_rect_pipe::Data {
                 resolution: target_dimensions(target),
@@ -307,7 +309,8 @@ impl PipeRenderer {
                 indices.extend(&[idx0, idx0 + 1, idx0 + 2, idx0 + 1, idx0 + 2, idx0 + 3]);
             }
         }
-        let (vertex_buffer, slice) = self.factory
+        let (vertex_buffer, slice) = self
+            .factory
             .create_vertex_buffer_with_slice(&vertices, &indices[..]);
         let data = pipe_pipe::Data {
             resolution: target_dimensions(target),

@@ -101,7 +101,8 @@ impl<T: JackBackend> Jack<T> {
         self.origin.set(origin);
     }
     pub fn connection_point(&self) -> Pt3 {
-        self.bounds.get().pos.with_z(0.0) + Pt2::from(self.bounds.get().size.y / 2.0).with_z(0.0)
+        self.bounds.get().pos.with_z(0.0)
+            + Pt2::from(self.bounds.get().size.y / 2.0).with_z(0.0)
             + self.origin()
     }
 }
@@ -142,10 +143,13 @@ impl<T: JackBackend> GuiComponent for Rc<Jack<T>> {
     fn handle(&mut self, event: &Event) {
         match event.data {
             EventData::Click(pos, button, state) => {
-                if event.focus && state == ButtonState::Pressed && button == MouseButton::Left
+                if event.focus
+                    && state == ButtonState::Pressed
+                    && button == MouseButton::Left
                     && self.bounds().flatten().drop_z().intersect(pos)
                 {
-                    let ctx = self.jack_ctx
+                    let ctx = self
+                        .jack_ctx
                         .upgrade()
                         .expect("no events expected during shutdown");
                     let mut in_progress = ctx.in_progress.borrow_mut();

@@ -92,4 +92,3 @@ impl<'a> From<&'a glutin::ModifiersState> for KeyModifiers {
         }
     }
 }
-

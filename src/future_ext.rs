@@ -1,7 +1,9 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
-use std::sync::{atomic::{AtomicBool, Ordering},
-                Arc};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 use crossbeam::sync::SegQueue;
 

@@ -1,13 +1,14 @@
-pub mod textbox;
 pub mod button;
 pub mod component;
 pub mod connect;
 pub mod event;
 pub mod geom;
+pub mod layout;
 pub mod menu;
 pub mod module_gui;
 pub mod render;
 pub mod root;
+pub mod textbox;
 
 use self::component::*;
 use self::event::*;
@@ -61,8 +62,8 @@ impl Model {
                 window_id: _,
                 event,
             } => match event {
-                Resized(w, h) => {
-                    self.window_size = Pt2::new(*w as f32, *h as f32);
+                Resized(pos) => {
+                    self.window_size = Pt2::new(pos.width as f32, pos.height as f32);
                     self.root
                         .set_bounds(Box3::new(Pt3::zero(), self.window_size.with_z(0.0)));
                 }
@@ -71,7 +72,7 @@ impl Model {
                     position,
                     modifiers: _,
                 } => {
-                    self.mouse_pos = Pt2::new((position.0 as f32).floor(), (position.1 as f32).floor());
+                    self.mouse_pos = Pt2::new((position.x as f32).floor(), (position.y as f32).floor());
                     self.generate_event(EventData::MouseMove(self.mouse_pos));
                 }
                 MouseInput {
@@ -87,7 +88,11 @@ impl Model {
                     input,
                 } => {
                     if let Some(code) = input.virtual_keycode {
-                        self.generate_event(EventData::Key(KeyEvent { code, modifiers: (&input.modifiers).into(), state: (&input.state).into() }));
+                        self.generate_event(EventData::Key(KeyEvent {
+                            code,
+                            modifiers: (&input.modifiers).into(),
+                            state: (&input.state).into(),
+                        }));
                     }
                 }
                 ReceivedCharacter(ch) => {
@@ -149,7 +154,7 @@ pub fn gui_main() {
                     event,
                 } => match event {
                     CloseRequested => running = false,
-                    Resized(_, _) => {
+                    Resized(..) => {
                         gfx_glutin::update_views(&window, &mut target.color, &mut target.depth);
                     }
                     _ => (),

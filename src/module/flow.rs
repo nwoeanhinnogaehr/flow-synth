@@ -9,7 +9,7 @@ use futures::prelude::*;
 use futures::task::Context;
 
 use std::any::TypeId;
-use std::collections::{HashMap, BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::marker::PhantomData;
 use std::mem;
 use std::slice;

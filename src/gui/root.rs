@@ -61,10 +61,13 @@ impl Root {
         self.context_menu = Some(MenuView::new(
             self.ctx.clone(),
             Box3::new(pos.with_z(0.0), (self.bounds.size.drop_z() - pos).with_z(0.0)),
-            Menu::new(&self.module_types
-                .iter()
-                .map(|ty| item(&ty.name()))
-                .collect::<Vec<_>>()),
+            Menu::new(
+                &self
+                    .module_types
+                    .iter()
+                    .map(|ty| item(&ty.name()))
+                    .collect::<Vec<_>>(),
+            ),
         ));
     }
 
@@ -125,7 +128,7 @@ impl GuiComponent for Root {
                 for module in &mut self.modules {
                     module.handle(&event.with_focus(true));
                 }
-            },
+            }
             EventData::MouseMove(pos) | EventData::Click(pos, _, _) => {
                 // march from front to back, if we hit something set this flag so that we only send
                 // one event with focus
@@ -183,7 +186,8 @@ impl GuiComponent for Root {
                     }
                     // left click - abort menu
                     if let Some(menu) = self.context_menu.as_mut() {
-                        if !menu.intersect(pos) && ButtonState::Pressed == state
+                        if !menu.intersect(pos)
+                            && ButtonState::Pressed == state
                             && MouseButton::Left == button
                         {
                             self.context_menu = None;

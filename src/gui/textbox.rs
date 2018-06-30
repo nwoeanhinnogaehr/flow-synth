@@ -52,11 +52,15 @@ impl GuiComponent<TextBoxUpdate> for TextBox {
                 self.bounds.pos + Pt3::new(BORDER_SIZE, BORDER_SIZE, 0.0),
                 self.bounds.flatten().size - BORDER_SIZE * 2.0,
             ),
-            if self.focused {
-                [0.1, 0.1, 0.3]
-            } else {
-                [0.1; 3]
-            },
+            if self.focused { [0.1, 0.1, 0.3] } else { [0.1; 3] },
+        );
+        // cursor
+        ctx.draw_rect(
+            Rect3::new(
+                self.bounds.pos + Pt3::new(4.0 + self.cursor as f32 * 10.0, 0.0, 0.0),
+                Pt2::new(10.0, self.bounds.size.y),
+            ),
+            if self.focused { [0.1, 0.3, 0.1] } else { [0.2; 3] },
         );
         ctx.draw_text(&self.content, self.bounds.pos + Pt3::new(4.0, 4.0, 0.0), [1.0; 3]);
     }
@@ -68,9 +72,7 @@ impl GuiComponent<TextBoxUpdate> for TextBox {
                 self.focused = event.focus;
                 TextBoxUpdate::NeedRender
             }
-            EventData::Key(kev)
-                if self.focused =>
-            {
+            EventData::Key(kev) if self.focused => {
                 if kev.state == ButtonState::Pressed {
                     match kev.code {
                         VirtualKeyCode::Left if self.cursor > 0 => self.cursor -= 1,
@@ -78,11 +80,9 @@ impl GuiComponent<TextBoxUpdate> for TextBox {
                         _ => {}
                     }
                 }
-                TextBoxUpdate::Unchanged
+                TextBoxUpdate::NeedRender
             }
-            EventData::Character(ch)
-                if self.focused =>
-            {
+            EventData::Character(ch) if self.focused => {
                 if ch == '\x08' {
                     if self.cursor > 0 {
                         self.cursor -= 1;

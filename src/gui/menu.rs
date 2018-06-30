@@ -90,7 +90,8 @@ impl Menu {
     pub fn any_children_hovered(&self) -> bool {
         self.items.iter().any(|item| {
             item.hover
-                || item.sub_menu()
+                || item
+                    .sub_menu()
                     .map(|menu| menu.any_children_hovered())
                     .unwrap_or(false)
         })
@@ -206,7 +207,8 @@ impl MenuView {
             item.hover = Rect2::new(pos, Pt2::new(ITEM_WIDTH, ITEM_HEIGHT)).intersect(mouse_pos);
             // Update last time mouse touched this item or submenu of it
             if (item.hover
-                || item.sub_menu()
+                || item
+                    .sub_menu()
                     .map(|menu| menu.any_children_hovered())
                     .unwrap_or(false)) && item.sub_menu().is_some()
             {
@@ -277,7 +279,8 @@ impl GuiComponent<MenuUpdate> for MenuView {
             EventData::Click(pos, button, state)
                 if button == MouseButton::Left && state == ButtonState::Released =>
             {
-                let path: Vec<_> = self.selection(pos)
+                let path: Vec<_> = self
+                    .selection(pos)
                     .unwrap_or(Vec::new())
                     .iter()
                     .map(|&x| x.into())

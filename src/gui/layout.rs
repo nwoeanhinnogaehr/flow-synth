@@ -37,12 +37,24 @@ impl Layout {
     /// Set the bounding box of the entire region to be laid out
     pub fn set_bounds(&mut self, bounds: Box3) {
         let bounds_node = self.nodes.get(&self.bounds_id).unwrap();
-        self.solver.suggest_value(bounds_node.x, bounds.pos.x.into()).unwrap();
-        self.solver.suggest_value(bounds_node.y, bounds.pos.y.into()).unwrap();
-        self.solver.suggest_value(bounds_node.z, bounds.pos.z.into()).unwrap();
-        self.solver.suggest_value(bounds_node.width, bounds.size.x.into()).unwrap();
-        self.solver.suggest_value(bounds_node.height, bounds.size.y.into()).unwrap();
-        self.solver.suggest_value(bounds_node.depth, bounds.size.z.into()).unwrap();
+        self.solver
+            .suggest_value(bounds_node.x, bounds.pos.x.into())
+            .unwrap();
+        self.solver
+            .suggest_value(bounds_node.y, bounds.pos.y.into())
+            .unwrap();
+        self.solver
+            .suggest_value(bounds_node.z, bounds.pos.z.into())
+            .unwrap();
+        self.solver
+            .suggest_value(bounds_node.width, bounds.size.x.into())
+            .unwrap();
+        self.solver
+            .suggest_value(bounds_node.height, bounds.size.y.into())
+            .unwrap();
+        self.solver
+            .suggest_value(bounds_node.depth, bounds.size.z.into())
+            .unwrap();
     }
 
     fn next_node_id(&mut self) -> NodeId {
@@ -109,9 +121,15 @@ impl Layout {
             let item_a = self.nodes.get(&item_ids[0]).unwrap();
             let item_b = self.nodes.get(&item_ids[1]).unwrap();
             match axis {
-                Axis::X => self.solver.add_constraint(item_a.x + item_a.width |LE(REQUIRED)| item_b.x),
-                Axis::Y => self.solver.add_constraint(item_a.y + item_a.height |LE(REQUIRED)| item_b.y),
-                Axis::Z => self.solver.add_constraint(item_a.z + item_a.depth |LE(REQUIRED)| item_b.z),
+                Axis::X => self
+                    .solver
+                    .add_constraint(item_a.x + item_a.width | LE(REQUIRED) | item_b.x),
+                Axis::Y => self
+                    .solver
+                    .add_constraint(item_a.y + item_a.height | LE(REQUIRED) | item_b.y),
+                Axis::Z => self
+                    .solver
+                    .add_constraint(item_a.z + item_a.depth | LE(REQUIRED) | item_b.z),
             }.unwrap();
         }
     }
@@ -122,12 +140,12 @@ impl Layout {
             let item = self.nodes.get(item_id).unwrap();
             self.solver
                 .add_constraints(&[
-                    item.x |GE(REQUIRED)| outer.x,
-                    item.y |GE(REQUIRED)| outer.y,
-                    item.z |GE(REQUIRED)| outer.z,
-                    item.x + item.width |LE(REQUIRED)| outer.x + outer.width,
-                    item.y + item.height |LE(REQUIRED)| outer.y + outer.height,
-                    item.z + item.depth |LE(REQUIRED)| outer.z + outer.depth,
+                    item.x | GE(REQUIRED) | outer.x,
+                    item.y | GE(REQUIRED) | outer.y,
+                    item.z | GE(REQUIRED) | outer.z,
+                    item.x + item.width | LE(REQUIRED) | outer.x + outer.width,
+                    item.y + item.height | LE(REQUIRED) | outer.y + outer.height,
+                    item.z + item.depth | LE(REQUIRED) | outer.z + outer.depth,
                 ])
                 .unwrap();
         }
@@ -137,9 +155,15 @@ impl Layout {
         let node_a = self.nodes.get(&a).unwrap();
         let node_b = self.nodes.get(&b).unwrap();
         match axis {
-            Axis::X => self.solver.add_constraint(node_a.width |EQ(strength)| ratio * node_b.width),
-            Axis::Y => self.solver.add_constraint(node_a.height |EQ(strength)| ratio * node_b.height),
-            Axis::Z => self.solver.add_constraint(node_a.depth |EQ(strength)| ratio * node_b.depth),
+            Axis::X => self
+                .solver
+                .add_constraint(node_a.width | EQ(strength) | ratio * node_b.width),
+            Axis::Y => self
+                .solver
+                .add_constraint(node_a.height | EQ(strength) | ratio * node_b.height),
+            Axis::Z => self
+                .solver
+                .add_constraint(node_a.depth | EQ(strength) | ratio * node_b.depth),
         }.unwrap();
     }
 
@@ -148,14 +172,18 @@ impl Layout {
         for item_ids in items.windows(2) {
             let item_a = self.nodes.get(&item_ids[0]).unwrap();
             let item_b = self.nodes.get(&item_ids[1]).unwrap();
-            self.solver.add_constraint(item_a.get_var(field) |EQ(strength)| item_b.get_var(field)).unwrap();
+            self.solver
+                .add_constraint(item_a.get_var(field) | EQ(strength) | item_b.get_var(field))
+                .unwrap();
         }
     }
 
     /// Suggest a value for a specific field of the given node
     pub fn suggest(&mut self, id: NodeId, field: Field, value: f64, strength: f64) {
         let node = self.nodes.get(&id).unwrap();
-        self.solver.add_constraint(node.get_var(field) |EQ(strength)| value).unwrap();
+        self.solver
+            .add_constraint(node.get_var(field) | EQ(strength) | value)
+            .unwrap();
     }
 }
 
