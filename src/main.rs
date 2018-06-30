@@ -20,7 +20,7 @@ extern crate futures;
 extern crate gfx;
 extern crate cassowary;
 extern crate gfx_device_gl;
-extern crate gfx_text;
+extern crate gfx_glyph;
 extern crate gfx_window_glutin;
 extern crate glutin;
 extern crate jack;

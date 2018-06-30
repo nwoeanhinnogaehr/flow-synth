@@ -10,7 +10,7 @@ use gfx::texture;
 use gfx::traits::{Factory, FactoryExt};
 use gfx::{Encoder, IntoIndexBuffer, PipelineState, Slice};
 use gfx_device_gl as gl;
-use gfx_text;
+use gfx_glyph;
 
 pub type ColorFormat = gfx::format::Rgba8;
 pub type DepthFormat = gfx::format::DepthStencil;
@@ -225,14 +225,18 @@ impl TexturedRectRenderer {
 
 #[derive(Clone)]
 struct TextRenderer {
-    renderer: Arc<Mutex<gfx_text::Renderer<gl::Resources, gl::Factory>>>,
+    glyph_brush: Arc<Mutex<gfx_glyph::GlyphBrush<'static, gl::Resources, gl::Factory>>>,
     texts: Vec<(String, [f32; 2], [f32; 3])>,
 }
 impl TextRenderer {
     fn new(factory: gl::Factory) -> TextRenderer {
-        let renderer = Arc::new(Mutex::new(gfx_text::new(factory.clone()).unwrap()));
+        let glyph_brush = Arc::new(Mutex::new(
+            gfx_glyph::GlyphBrushBuilder::using_font_bytes(
+                &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/fonts/TerminusTTF.ttf"))[..],
+            ).build(factory),
+        ));
         TextRenderer {
-            renderer,
+            glyph_brush,
             texts: Vec::new(),
         }
     }
@@ -240,15 +244,19 @@ impl TextRenderer {
         self.texts.push((text.into(), pos, color));
     }
     fn draw(&mut self, encoder: &mut Encoder<gl::Resources, gl::CommandBuffer>, target: &Target) {
-        let mut renderer = self.renderer.lock().unwrap();
+        let mut glyph_brush = self.glyph_brush.lock().unwrap();
         for (text, pos, color) in self.texts.drain(..) {
-            renderer.add(
-                &text,
-                [pos[0] as i32, pos[1] as i32],
-                [color[0], color[1], color[2], 1.0],
-            );
+            glyph_brush.queue(gfx_glyph::Section {
+                text: &text,
+                screen_position: (pos[0], pos[1]),
+                color: [color[0], color[1], color[2], 1.0],
+                scale: gfx_glyph::Scale::uniform(20.0),
+                ..gfx_glyph::Section::default()
+            });
         }
-        renderer.draw(encoder, &target.color).unwrap();
+        glyph_brush
+            .draw_queued(encoder, &target.color, &target.depth)
+            .unwrap();
     }
 }
 
