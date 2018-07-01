@@ -25,8 +25,8 @@ pub struct AudioIO {
 }
 impl Module for AudioIO {
     fn new(ifc: Arc<flow::Interface>) -> AudioIO {
-        let in_port = Some(ifc.add_port("Input".into()));
-        let out_port = Some(ifc.add_port("Output".into()));
+        let in_port = Some(ifc.get_or_create_port("Input".into()));
+        let out_port = Some(ifc.get_or_create_port("Output".into()));
         AudioIO {
             ifc,
             in_port,

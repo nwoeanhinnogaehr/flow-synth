@@ -20,7 +20,7 @@ pub struct Printer<T: Debug + Send + Sync + 'static> {
 }
 impl<T: Debug + Send + Sync + 'static> Module for Printer<T> {
     fn new(ifc: Arc<flow::Interface>) -> Printer<T> {
-        let port = ifc.add_port::<T, usize>("Input".into());
+        let port = ifc.get_or_create_port::<T, usize>("Input".into());
         Printer {
             ifc,
             port,
@@ -71,7 +71,7 @@ pub struct Counter<T: Copy + One + Zero + Add + Send + 'static> {
 }
 impl<T: Copy + One + Zero + Add + Send + 'static> Module for Counter<T> {
     fn new(ifc: Arc<flow::Interface>) -> Counter<T> {
-        let port = ifc.add_port::<usize, T>("Output".into());
+        let port = ifc.get_or_create_port::<usize, T>("Output".into());
         Counter {
             ifc,
             port,

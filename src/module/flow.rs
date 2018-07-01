@@ -117,28 +117,33 @@ impl Interface {
     pub fn id(&self) -> NodeId {
         self.id
     }
-    /// Find a port by name (name is held within the associated `MetaPort`)
-    pub fn find_port(&self, name: &str) -> Option<Arc<OpaquePort>> {
+    /// Find a port by name and type.
+    pub fn find_port<I: 'static, O: 'static>(&self, name: &str) -> Option<Arc<Port<I, O>>> {
         self.ports
             .read()
             .unwrap()
             .iter()
-            .find(|&(_, port)| port.name() == name)
-            .map(|port| port.1)
+            .filter(|&(_, port)| port.name() == name)
+            .filter_map(|(_, port)| port.as_typed::<I, O>())
+            .next()
             .cloned()
     }
     /// Get a vector of references to all associated ports at the time of the call.
     pub fn ports(&self) -> Vec<Arc<OpaquePort>> {
         self.ports.read().unwrap().values().cloned().collect()
     }
-    /// Add a new port using the given metadata.
-    pub fn add_port<I: 'static, O: 'static>(&self, name: String) -> Arc<Port<I, O>> {
-        let port = Port::new(&self.graph.upgrade().unwrap(), name);
-        self.ports
-            .write()
-            .unwrap()
-            .insert(port.id, Arc::clone(port.as_opaque()));
-        port
+    /// Find a port by name and type if it exists, or add a new one if not.
+    pub fn get_or_create_port<I: 'static, O: 'static>(&self, name: String) -> Arc<Port<I, O>> {
+        if let Some(port) = self.find_port(&name) {
+            port
+        } else {
+            let port = Port::new(&self.graph.upgrade().unwrap(), name);
+            self.ports
+                .write()
+                .unwrap()
+                .insert(port.id, Arc::clone(port.as_opaque()));
+            port
+        }
     }
     /// Remove a port by ID.
     pub fn remove_port(&self, port: PortId) -> Result<Arc<OpaquePort>, Error> {

@@ -119,8 +119,8 @@ impl Drop for LiveCode {
 
 impl Module for LiveCode {
     fn new(ifc: Arc<flow::Interface>) -> LiveCode {
-        let in_port = ifc.add_port("Input".into());
-        let out_port = ifc.add_port("Output".into());
+        let in_port = ifc.get_or_create_port("Input".into());
+        let out_port = ifc.get_or_create_port("Output".into());
         let (cmd_tx, cmd_rx) = mpsc::unbounded();
         LiveCode {
             ifc,
