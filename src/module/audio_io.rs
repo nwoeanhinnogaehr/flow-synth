@@ -188,8 +188,7 @@ impl ProcessHandler for Processor {
         };
 
         // ignore errors, prefer to drop the frame
-        if let Ok(frame) = self.output_rx.try_next() {
-            let frame = frame.unwrap();
+        if let Ok(Some(frame)) = self.output_rx.try_next() {
             assert!(frame.rate == in_frame.rate);
             assert!(frame.data.shape() == in_frame.data.shape());
             for (output, buffer) in self.outputs.iter_mut().zip(frame.data.axis_iter(Axis(1))) {

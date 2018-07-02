@@ -233,7 +233,8 @@ impl TextRenderer {
         let glyph_brush = Arc::new(Mutex::new(
             gfx_glyph::GlyphBrushBuilder::using_font_bytes(
                 &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/fonts/TerminusTTF.ttf"))[..],
-            ).build(factory),
+            ).cache_glyph_positioning(false) // cannot cache positions because we use multiple targets
+            .build(factory),
         ));
         TextRenderer {
             glyph_brush,

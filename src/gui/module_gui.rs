@@ -15,6 +15,7 @@ pub struct GuiModuleConfig {
     pub bounds: Box3,
     pub jack_ctx: Rc<JackContext<Arc<flow::OpaquePort>>>,
     pub executor: ThreadPool,
+    pub node_id: Option<flow::NodeId>,
 }
 pub trait GuiModuleFactory {
     fn name(&self) -> &str;
@@ -39,10 +40,6 @@ impl<T: Module + 'static> GuiModuleFactory for BasicGuiModuleFactory<T> {
     fn new(&mut self, cfg: GuiModuleConfig) -> Box<dyn GuiModule> {
         Box::new(GuiModuleWrapper::<T>::new(cfg))
     }
-}
-
-pub trait GuiModule: GuiComponent<GuiModuleUpdate> {
-    fn node(&self) -> Arc<flow::Node>;
 }
 
 pub type BodyUpdate = bool;
@@ -106,9 +103,14 @@ impl<T: Module + 'static> GuiModuleWrapper<T> {
             mut ctx,
             graph,
             executor,
+            node_id,
         } = cfg;
         let target = TextureTarget::new(ctx.clone(), bounds.size.drop_z());
-        let ifc = graph.add_node();
+        let ifc = if let Some(id) = node_id {
+            graph.add_node_with_id(id)
+        } else {
+            graph.add_node()
+        };
         let node = graph.node(ifc.id()).unwrap();
         let mut module = T::new(ifc);
         let ports = module.ports();
@@ -212,9 +214,21 @@ impl<T: Module + 'static> GuiModuleWrapper<T> {
     }
 }
 
+pub trait GuiModule: GuiComponent<GuiModuleUpdate> {
+    fn node(&self) -> Arc<flow::Node>;
+    fn name(&self) -> &'static str;
+    fn jacks(&self) -> &[Rc<Jack<Arc<flow::OpaquePort>>>];
+}
+
 impl<T: Module> GuiModule for GuiModuleWrapper<T> {
     fn node(&self) -> Arc<flow::Node> {
         self.node.clone()
+    }
+    fn name(&self) -> &'static str {
+        T::name()
+    }
+    fn jacks(&self) -> &[Rc<Jack<Arc<flow::OpaquePort>>>] {
+        &self.jacks
     }
 }
 

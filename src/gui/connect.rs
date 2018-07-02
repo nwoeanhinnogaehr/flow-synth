@@ -8,15 +8,15 @@ use std::rc::{Rc, Weak};
 use std::sync::Arc;
 
 pub trait JackBackend {
-    fn label(&self) -> &str;
+    fn name(&self) -> &str;
     fn can_connect(&self, other: &Self) -> bool;
     fn connect(&self, other: &Self);
     fn disconnect(&self);
 }
 
 impl JackBackend for Arc<flow::OpaquePort> {
-    fn label(&self) -> &str {
-        self.name()
+    fn name(&self) -> &str {
+        flow::OpaquePort::name(self)
     }
     fn can_connect(&self, other: &Self) -> bool {
         flow::OpaquePort::can_connect(self, other)
@@ -105,6 +105,29 @@ impl<T: JackBackend> Jack<T> {
             + Pt2::from(self.bounds.get().size.y / 2.0).with_z(0.0)
             + self.origin()
     }
+    pub fn name(&self) -> &str {
+        self.backend.name()
+    }
+    pub fn connect(self: &Rc<Jack<T>>, other: &Rc<Jack<T>>) {
+        // TODO: produce errors
+        let mut connection = self.connection.borrow_mut();
+        if self.backend.can_connect(&other.backend) {
+            // signal disconnect to backend
+            if connection.is_connected() {
+                self.backend.disconnect();
+            }
+            // update model
+            connection.disconnect();
+            *connection = Connection::Tail {
+                endpoint: Rc::downgrade(other),
+            };
+            *other.connection.borrow_mut() = Connection::Head {
+                endpoint: Rc::downgrade(self),
+            };
+            // signal connect to backend
+            self.backend.connect(&other.backend);
+        }
+    }
 }
 impl<T: JackBackend> GuiComponent for Rc<Jack<T>> {
     fn set_bounds(&mut self, bounds: Box3) {
@@ -135,7 +158,7 @@ impl<T: JackBackend> GuiComponent for Rc<Jack<T>> {
             [0.0, 0.0, 0.5],
         );
         ctx.draw_text(
-            self.backend.label(),
+            self.backend.name(),
             self.bounds().pos + Pt3::new(20.0, 0.0, 0.0),
             [1.0, 1.0, 1.0],
         );

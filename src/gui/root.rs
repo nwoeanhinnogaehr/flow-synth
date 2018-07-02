@@ -5,8 +5,10 @@ use module::flow;
 
 use futures::executor::ThreadPool;
 use gfx_device_gl as gl;
+use ron;
 
 use std::cmp::Ordering;
+use std::fs::File;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -37,20 +39,24 @@ impl Root {
         }
     }
 
-    fn new_module(&mut self, name: &str, rect: Rect2) -> Result<flow::NodeId, ()> {
+    fn new_module(
+        &mut self,
+        name: &str,
+        bounds: Box3,
+        node_id: Option<flow::NodeId>,
+    ) -> Result<flow::NodeId, ()> {
         // dummy z, overwritten by move_to_front
         if let Some(factory) = self.module_types.iter_mut().find(|ty| ty.name() == name) {
-            let bounds = Box3::new(rect.pos.with_z(0.0), rect.size.with_z(0.0));
             let module = factory.new(GuiModuleConfig {
                 bounds,
                 jack_ctx: Rc::clone(&self.jack_ctx),
                 graph: Arc::clone(&self.graph),
                 ctx: self.ctx.clone(),
                 executor: self.executor.clone(),
+                node_id,
             });
             let id = module.node().id();
             self.modules.push(module);
-            self.move_to_front(id);
             Ok(id)
         } else {
             Err(())
@@ -96,6 +102,144 @@ impl Root {
             module.set_bounds(bounds);
         }
     }
+
+    fn save(&self, filename: &str) -> Result<(), serial::Error> {
+        use std::collections::HashSet;
+        use std::io::prelude::*;
+
+        let mut modules = Vec::new();
+        let mut connections = Vec::new();
+        // keep track of visited ports so we only serialize one end of the connection
+        let mut visited_ports = HashSet::new();
+        for module in &self.modules {
+            let bounds = module.bounds();
+            let node = module.node();
+            let module = serial::Module {
+                bounds,
+                id: node.id(),
+                type_name: module.name().into(),
+            };
+            modules.push(module);
+
+            for port in node.ports() {
+                visited_ports.insert((port.node_id(), port.id()));
+                if let Some(dst) = port.edge() {
+                    if !visited_ports.contains(&(dst.node_id(), dst.id())) {
+                        visited_ports.insert((dst.node_id(), dst.id()));
+                        let connection = serial::Connection {
+                            src_node: node.id(),
+                            src_port: port.name().into(),
+                            dst_node: dst.node_id(),
+                            dst_port: dst.name().into(),
+                        };
+                        connections.push(connection);
+                    }
+                }
+            }
+        }
+        let root = serial::Root {
+            modules,
+            connections,
+        };
+
+        let data = ron::ser::to_string(&root).unwrap();
+        let mut file = File::create(filename)?;
+        write!(file, "{}", data)?;
+
+        Ok(())
+    }
+
+    fn load(&mut self, filename: &str) -> ron::de::Result<()> {
+        use std::fs::File;
+
+        // reset current state
+        ::std::mem::replace(self, Root::new(self.ctx.clone(), self.bounds));
+
+        let file = File::open(filename)?;
+        let root: serial::Root = ron::de::from_reader(file)?;
+
+        for module in root.modules {
+            if let Err(_) = self.new_module(&module.type_name, module.bounds, Some(module.id)) {
+                println!("Error creating module {:?}", module.type_name);
+            }
+        }
+
+        for connection in root.connections {
+            let src_node = self
+                .modules
+                .iter()
+                .find(|module| module.node().id() == connection.src_node)
+                .unwrap();
+            let dst_node = self
+                .modules
+                .iter()
+                .find(|module| module.node().id() == connection.dst_node)
+                .unwrap();
+            let src_jack = src_node
+                .jacks()
+                .iter()
+                .find(|jack| jack.name() == connection.src_port);
+            let dst_jack = dst_node
+                .jacks()
+                .iter()
+                .find(|jack| jack.name() == connection.dst_port);
+            if let (Some(src_jack), Some(dst_jack)) = (src_jack, dst_jack) {
+                src_jack.connect(dst_jack);
+            } else {
+                println!(
+                    "Could not find port(s) needed to connect {:?}:{:?} and {:?}:{:?}",
+                    src_node.name(),
+                    connection.src_port,
+                    dst_node.name(),
+                    connection.dst_port
+                );
+            }
+        }
+
+        Ok(())
+    }
+}
+
+mod serial {
+    use gui::geom::*;
+    use module::flow::NodeId;
+    use ron;
+    use std::io;
+
+    #[derive(Debug)]
+    pub enum Error {
+        IO(io::Error),
+        Serialize(ron::ser::Error),
+    }
+    impl From<io::Error> for Error {
+        fn from(e: io::Error) -> Error {
+            Error::IO(e)
+        }
+    }
+    impl From<ron::ser::Error> for Error {
+        fn from(e: ron::ser::Error) -> Error {
+            Error::Serialize(e)
+        }
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct Root {
+        pub modules: Vec<Module>,
+        pub connections: Vec<Connection>,
+    }
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct Module {
+        pub bounds: Box3,
+        pub id: NodeId,
+        pub type_name: String,
+    }
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct Connection {
+        pub src_node: NodeId,
+        pub src_port: String,
+        pub dst_node: NodeId,
+        pub dst_port: String,
+    }
 }
 
 impl GuiComponent for Root {
@@ -124,6 +268,32 @@ impl GuiComponent for Root {
     }
     fn handle(&mut self, event: &Event) {
         match event.data {
+            EventData::Key(KeyEvent {
+                code: VirtualKeyCode::S,
+                modifiers:
+                    KeyModifiers {
+                        ctrl: true,
+                        shift: false,
+                        alt: false,
+                        logo: false,
+                    },
+                state: ButtonState::Pressed,
+            }) => {
+                println!("Save: {:?}", self.save("project.fsy"));
+            }
+            EventData::Key(KeyEvent {
+                code: VirtualKeyCode::L,
+                modifiers:
+                    KeyModifiers {
+                        ctrl: true,
+                        shift: false,
+                        alt: false,
+                        logo: false,
+                    },
+                state: ButtonState::Pressed,
+            }) => {
+                println!("Load: {:?}", self.load("project.fsy"));
+            }
             EventData::Key(_) | EventData::Character(_) => {
                 for module in &mut self.modules {
                     module.handle(&event.with_focus(true));
@@ -142,7 +312,9 @@ impl GuiComponent for Root {
                         match status {
                             MenuUpdate::Select(path) => {
                                 let name: &str = path[0].as_ref();
-                                self.new_module(name, Rect2::new(pos, 256.0.into())).unwrap();
+                                let bounds = Box3::new(pos.with_z(0.0), Pt2::from(256.0).with_z(0.0));
+                                let id = self.new_module(name, bounds, None).unwrap();
+                                self.move_to_front(id);
                                 self.context_menu = None;
                             }
                             _ => (),

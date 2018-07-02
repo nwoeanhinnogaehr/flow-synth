@@ -10,6 +10,9 @@
 #![feature(nll)]
 #![feature(arbitrary_self_types)]
 #![feature(never_type)]
+#![feature(async_await)]
+#![feature(futures_api)]
+#![feature(atomic_min_max)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![deny(bare_trait_objects)]
@@ -28,6 +31,10 @@ extern crate ndarray;
 extern crate nfd;
 extern crate notify;
 extern crate num;
+extern crate ron;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 
 mod future_ext;
 mod gui;

@@ -17,12 +17,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock, Weak};
 
 /// A lightweight persistent identifier for a node.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct NodeId(pub usize);
 
 /// A lightweight persistent identifier for a port. Only gauranteeed to be unique within a specific
 /// node.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PortId(pub usize);
 
 /// A graph holds a collection of Nodes. Nodes have a collection of Ports. Ports can be connected
@@ -42,7 +42,12 @@ impl Graph {
     }
     /// Construct a new node from the given metadata and argument.
     pub fn add_node(self: &Arc<Graph>) -> Arc<Interface> {
-        let ifc = Arc::new(Interface::new(self));
+        self.add_node_with_id(NodeId(self.generate_id()))
+    }
+    /// Construct a new node from the given metadata and argument.
+    pub(crate) fn add_node_with_id(self: &Arc<Graph>, id: NodeId) -> Arc<Interface> {
+        self.constrain_min_id(id.0 + 1);
+        let ifc = Arc::new(Interface::new(self, id));
         let node = Arc::new(Node {
             ifc: ifc.clone(),
         });
@@ -73,6 +78,9 @@ impl Graph {
     fn generate_id(&self) -> usize {
         self.id_counter.fetch_add(1, Ordering::SeqCst)
     }
+    fn constrain_min_id(&self, min: usize) -> usize {
+        self.id_counter.fetch_max(min, Ordering::SeqCst)
+    }
 }
 
 /// A node is the public interface for generic functionality on a module in the graph.
@@ -86,7 +94,7 @@ impl Node {
     pub fn id(&self) -> NodeId {
         self.ifc.id()
     }
-    /// Find a port by name (name is held within the associated `MetaPort`)
+    /// Find a port by name
     pub fn find_port(&self, name: &'static str) -> Option<Arc<OpaquePort>> {
         self.ifc.find_port(name)
     }
@@ -106,9 +114,9 @@ pub struct Interface {
 }
 
 impl Interface {
-    fn new(graph: &Arc<Graph>) -> Interface {
+    fn new(graph: &Arc<Graph>, id: NodeId) -> Interface {
         Interface {
-            id: NodeId(graph.generate_id()),
+            id,
             ports: RwLock::new(BTreeMap::new()),
             graph: Arc::downgrade(graph),
         }
@@ -137,7 +145,7 @@ impl Interface {
         if let Some(port) = self.find_port(&name) {
             port
         } else {
-            let port = Port::new(&self.graph.upgrade().unwrap(), name);
+            let port = Port::new(&self.graph.upgrade().unwrap(), self.id(), name);
             self.ports
                 .write()
                 .unwrap()
@@ -172,6 +180,7 @@ pub struct Port<I: 'static, O: 'static> {
     id: PortId,
     inner: Lock<PortInner>,
     edge: Lock<Edge<I, O>>,
+    node_id: NodeId,
 }
 
 struct PortInner {
@@ -208,7 +217,7 @@ impl OpaquePort {
 }
 
 impl<I: 'static, O: 'static> Port<I, O> {
-    fn new(graph: &Graph, name: String) -> Arc<Port<I, O>> {
+    fn new(graph: &Graph, node_id: NodeId, name: String) -> Arc<Port<I, O>> {
         Arc::new(Port {
             _in: PhantomData,
             _out: PhantomData,
@@ -226,6 +235,7 @@ impl<I: 'static, O: 'static> Port<I, O> {
                 other: None,
                 connect_wait: Vec::new(),
             }),
+            node_id,
         })
     }
 
@@ -240,6 +250,10 @@ impl<I: 'static, O: 'static> Port<I, O> {
     /// Get the port name.
     pub fn name(&self) -> &str {
         &self.name
+    }
+    /// Get the NodeId.
+    pub fn node_id(&self) -> NodeId {
+        self.node_id
     }
     /// Determines if two ports can be connected to each other.
     pub fn can_connect(self: &Arc<Port<I, O>>, other: &Arc<Port<O, I>>) -> bool {
@@ -351,7 +365,7 @@ impl<I: 'static, O: 'static> Port<I, O> {
             reader.wake();
         }
     }
-    fn edge(&self) -> Option<Arc<Port<O, I>>> {
+    pub fn edge(&self) -> Option<Arc<Port<O, I>>> {
         self.edge.spin_lock().other.as_ref().and_then(|x| x.upgrade())
     }
 

@@ -1,6 +1,6 @@
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
-#[derive(Copy, Clone, Debug, PartialEq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct Pt2 {
     pub x: f32,
     pub y: f32,
@@ -64,7 +64,7 @@ impl_binop_pt2!(Mul, mul);
 impl_binop_pt2!(Div, div);
 impl_uniop_pt2!(Neg, neg);
 
-#[derive(Copy, Clone, Debug, PartialEq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct Pt3 {
     pub x: f32,
     pub y: f32,
@@ -137,7 +137,7 @@ impl_binop_pt3!(Mul, mul);
 impl_binop_pt3!(Div, div);
 impl_uniop_pt3!(Neg, neg);
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Rect2 {
     pub pos: Pt2,
     pub size: Pt2,
@@ -174,7 +174,7 @@ impl Rect2 {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Rect3 {
     pub pos: Pt3,
     pub size: Pt2,
@@ -191,7 +191,7 @@ impl Rect3 {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Box3 {
     pub pos: Pt3,
     pub size: Pt3,
