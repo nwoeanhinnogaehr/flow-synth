@@ -291,7 +291,6 @@ impl GuiComponent<bool> for LiveCodeGui {
             ButtonUpdate::Unchanged => false,
             ButtonUpdate::NeedRender => true,
             ButtonUpdate::Clicked => {
-                use nfd;
                 match nfd::open_file_dialog(None, None).unwrap() {
                     nfd::Response::Okay(path) => {
                         self.open_button.set_label(path.clone());

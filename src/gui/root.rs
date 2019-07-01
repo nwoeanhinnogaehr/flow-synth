@@ -150,8 +150,6 @@ impl Root {
     }
 
     fn load(&mut self, filename: &str) -> ron::de::Result<()> {
-        use std::fs::File;
-
         // reset current state
         ::std::mem::replace(self, Root::new(self.ctx.clone(), self.bounds));
 

@@ -256,7 +256,8 @@ impl TextRenderer {
             });
         }
         glyph_brush
-            .draw_queued(encoder, &target.color, &target.depth)
+            .use_queue()
+            .draw(encoder, &target.color)
             .unwrap();
     }
 }
