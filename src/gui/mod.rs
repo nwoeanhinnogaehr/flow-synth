@@ -16,7 +16,7 @@ use self::geom::*;
 use self::render::*;
 use self::root::*;
 
-use glutin::{self, ContextBuilder, EventsLoop, GlContext, WindowBuilder};
+use glutin::{self, ContextBuilder, WindowBuilder, EventsLoop};
 
 use std::collections::VecDeque;
 use std::time::Instant;
@@ -114,8 +114,9 @@ pub fn gui_main() {
     let mut events_loop = EventsLoop::new();
     let context = ContextBuilder::new().with_gl_profile(glutin::GlProfile::Core);
     let builder = WindowBuilder::new().with_title(String::from("flow-synth"));
+
     let (window, mut device, factory, main_color, main_depth) =
-        gfx_glutin::init::<ColorFormat, DepthFormat>(builder, context, &events_loop);
+       gfx_glutin::init::<ColorFormat, DepthFormat>(builder, context, &events_loop).unwrap();
 
     let mut target = Target {
         color: main_color,

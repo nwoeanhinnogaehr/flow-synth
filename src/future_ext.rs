@@ -5,7 +5,7 @@ use std::sync::{
     Arc,
 };
 
-use crossbeam::sync::SegQueue;
+use crossbeam::queue::SegQueue;
 
 use futures::prelude::*;
 use futures::task;
@@ -130,7 +130,9 @@ impl<'a, T: 'a> Drop for LockGuard<'a, T> {
         self.lock.flag.store(false, Ordering::Release);
 
         // wake anyone that was waiting for the lock
-        self.lock.queue.try_pop().map(|x| x.wake());
+        if let Ok(item) = self.lock.queue.pop() {
+            item.wake();
+        }   
     }
 }
 impl<'a, T: 'a> Deref for LockGuard<'a, T> {
